@@ -1,11 +1,13 @@
 import os
 import pickle
 import random
-
 import numpy as np
+import heapq
 
 
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
+
+N_CLOSEST_COINS = 1 # number of closest coins to consider for features
 
 
 def setup(self):
@@ -22,14 +24,17 @@ def setup(self):
 
     :param self: This object is passed to all callbacks and you can set arbitrary values.
     """
-    if self.train or not os.path.isfile("my-saved-model.pt"):
-        self.logger.info("Setting up model from scratch.")
-        weights = np.random.rand(len(ACTIONS))
-        self.model = weights / weights.sum()
+    if not self.train:
+        qtable_file = "SOME FILE NAME"
     else:
-        self.logger.info("Loading model from saved state.")
-        with open("my-saved-model.pt", "rb") as file:
-            self.model = pickle.load(file)
+        qtable_file = None
+    if self.train or not os.path.isfile(qtable_file):
+        self.logger.info("Setting up Q-Table from scratch.")
+        self.q_table = {}
+    else:
+        self.logger.info("Loading Q-Table from saved state.")
+        with open(qtable_file, "rb") as file:
+            self.q_table = pickle.load(file)
 
 
 def act(self, game_state: dict) -> str:
@@ -51,6 +56,90 @@ def act(self, game_state: dict) -> str:
     self.logger.debug("Querying model for action.")
     return np.random.choice(ACTIONS, p=self.model)
 
+def adjacent_tile_features(game_state, agent_position):
+    """ 
+    Convert the agent's position and the game state to features for the 4 adjacent
+    tiles UP, DOWN, LEFT, RIGHT. We encode each tile in binary:
+    [0, 0]: outside bound, [0, 1]: stone wall, [1, 0]: crate,
+    [1, 1]: free tile
+    
+    :param: game_state (dict): The dictionary that describes everything on the board.
+    :agent_position (np.array([x, y])): current coordinates of the agent
+    :return: np.array(list)[4 x 2]: concatenated tile features UP, DOWN, LEFT, RIGHT
+    """
+    y, x = agent_position
+    height, width = game_state['field'].shape
+    tile_features = []
+    # UP DOWN LEFT RIGHT
+    directions = [(y-1, x), (y+1, x), (y, x-1), (y, x+1)]
+    for dy, dx in directions:
+        # Outside bound
+        if not (0 <= dx < width and 0 <= dy < height):
+            tile_features.extend([0, 0])
+        # Stone wall
+        elif game_state['field'][dy, dx] == -1:
+            tile_features.extend([0, 1])
+        # Crate
+        elif game_state['field'][dy, dx] == 1:
+            tile_features.extend([1, 0])
+        # Free tile
+        elif game_state['field'][dy, dx] == 0:
+            tile_features.extend([1, 1])
+
+    assert len(tile_features) == 8
+    return np.array(tile_features)
+
+# TODO: add objectives crates and bombs
+def find_closest_objectives(game_state, agent_position):
+    """
+    Use Dijkstra's algorithm to construct shortest path search
+    and find the closest coins/crates/bombs up the the max number
+    specified in the setup. We construct a parent tree to store
+    the movement UP, DOWN, LEFT, RIGHT adjacent to the agent as
+    well as the respective distance as a feature for each objective.
+    UP: [0, 0], DOWN: [0, 1], LEFT: [1, 0], RIGHT: [1, 1].
+    :params: game_state (dict): The dictionary that describes everything on the board.
+    :agent_position (np.array([x, y])): current coordinates of the agent
+    :return: np.array(list): concatenated tile features for all objectives
+    """
+    y, x = agent_position
+    # UP DOWN LEFT RIGHT
+    neighbors = [(y-1, x), (y+1, x), (y, x-1), (y, x+1)]
+    height, width = game_state['field'].shape
+    distances = np.ones(game_state['field'].shape) * float('inf')
+    distances[y, x] = 0
+    parents = np.zeros(game_state['field'].shape,
+                       dtype=np.dtype([('y', int), ('x', int)]))
+    parents[y, x] = (y, x)
+    q = [(0, (y, x))]
+    coins_picked = 0
+    out_features = [[0, 0, float('inf')] for _ in range(N_CLOSEST_COINS)]
+    max_coins = min(N_CLOSEST_COINS, len(game_state['coins']))
+    while not len(q) == 0 and coins_picked < max_coins:
+        curr_dist, (dy, dx) = heapq.heappop(q)
+        if curr_dist > distances[dx, dy]:
+            continue
+        if (dy, dx) in game_state['coins']:
+            ddy, ddx = parents[dy, dx]
+            while (ddy, ddx) not in neighbors:
+                ddy, ddx = parents[ddy, ddx]
+            index = neighbors.index((ddy, ddx))
+            out_features[coins_picked] = [index // 2, index % 2, curr_dist]
+            coins_picked += 1
+        directions = [(dy-1, dx), (dy+1, dx), (dy, dx-1), (dy, dx+1)]
+        
+        for ddy, ddx in directions:
+            if not (0 <= ddx < width and 0 <= ddy < height):
+                continue
+            if game_state['field'][ddy, ddx] != 0:
+                continue
+            if curr_dist + 1 < distances[ddy, ddx]:
+                distances[ddy, ddx] = curr_dist + 1
+                parents[ddy, ddx] = (dy, dx)
+                heapq.heappush(q, (curr_dist+1, (ddy, ddx)))
+
+    return np.concatenate(out_features)
+
 
 def state_to_features(game_state: dict) -> np.array:
     """
@@ -70,10 +159,23 @@ def state_to_features(game_state: dict) -> np.array:
     if game_state is None:
         return None
 
-    # For example, you could construct several channels of equal shape, ...
-    channels = []
-    channels.append(...)
-    # concatenate them as a feature tensor (they must have the same shape), ...
-    stacked_channels = np.stack(channels)
-    # and return them as a vector
-    return stacked_channels.reshape(-1)
+    agent_position = game_state['self'][3]
+    return np.concatenate([adjacent_tile_features(game_state, agent_position),
+                           find_closest_objectives(game_state, agent_position)])
+
+
+if __name__ == "__main__":
+    # Test the feature vector
+    game_state = {
+        'round': 0,
+        'step': 0,
+        'field': np.array([[0, 0, 0, -1],
+                          [0, 0, 0, 0],
+                          [-1, -1, 0, -1],
+                          [0, 0, 0, 0]]),
+        'coins': [(0, 0), (1, 2), (1, 3), (3, 3)],
+        'self': ("Name", 0, True, (3, 0))
+    }
+    features = state_to_features(game_state)
+    print(features)
+    assert (features == np.array([0, 1, 0, 0, 0, 0, 1, 1, 1, 1, 3])).all()
