@@ -59,7 +59,7 @@ def act(self, game_state: dict) -> str:
         # 80%: walk in any direction. 10% wait. 10% bomb.
         return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .1, .1])
     self.logger.debug("Exploitation: Selecting best action using Q-Value.")
-    features = state_to_features(self, game_state)
+    features, _ = state_to_features(self, game_state)
     q_values: dict = self.q_table.get(tuple(features),
                                       {a: 0.0 for a in ACTIONS})
     # print(f"Given features: {features}, Q-values: {q_values}")
@@ -109,10 +109,12 @@ def find_closest_objectives(self, game_state, agent_position):
     specified in the setup. We construct a parent tree to store
     the movement UP, DOWN, LEFT, RIGHT adjacent to the agent as
     well as the respective distance as a feature for each objective.
-    WAIT: -1, UP: 0, DOWN: 1, LEFT: 2, RIGHT: 3.
+    WAIT: -1, UP: 0, DOWN: 1, LEFT: 2, RIGHT: 3. The distance is only
+    saved up to the MAX_SAVE_DIST to lower the number of states.
     :params: game_state (dict): The dictionary that describes everything on the board.
     :agent_position (np.array([x, y])): current coordinates of the agent
     :return: np.array(list): concatenated tile features for all objectives
+             np.array(list): concatenated list of actual distances to objectives
     """
     self.logger.debug("Finding closest coin objectives.")
     y, x = agent_position
@@ -126,7 +128,8 @@ def find_closest_objectives(self, game_state, agent_position):
     parents[y, x] = (y, x)
     q = [(0, (y, x))]
     coins_picked = 0
-    out_features = [[0, 0, float('inf')] for _ in range(N_CLOSEST_COINS)]
+    out_features = [-1 for _ in range(N_CLOSEST_COINS)]
+    coin_distances = [float('inf') for _ in range(N_CLOSEST_COINS)]
     max_coins = min(N_CLOSEST_COINS, len(game_state['coins']))
     while not len(q) == 0 and coins_picked < max_coins:
         curr_dist, (dy, dx) = heapq.heappop(q)
@@ -134,14 +137,16 @@ def find_closest_objectives(self, game_state, agent_position):
             continue
         if (dy, dx) in game_state['coins']:
             if (dy, dx) == (y, x):
-                out_features[coins_picked] = [-1, curr_dist]
+                out_features[coins_picked] = -1
+                coin_distances[coins_picked] = curr_dist
                 coins_picked += 1
             else:
                 ddy, ddx = dy, dx
                 while (ddy, ddx) not in neighbors:
                     ddy, ddx = parents[ddy, ddx]
                 index = neighbors.index((ddy, ddx))
-                out_features[coins_picked] = [index, curr_dist]
+                out_features[coins_picked] = index
+                coin_distances[coins_picked] = curr_dist
                 coins_picked += 1
         directions = [(dy-1, dx), (dy+1, dx), (dy, dx-1), (dy, dx+1)]
         
@@ -154,7 +159,7 @@ def find_closest_objectives(self, game_state, agent_position):
                 distances[ddy, ddx] = curr_dist + 1
                 parents[ddy, ddx] = (dy, dx)
                 heapq.heappush(q, (curr_dist+1, (ddy, ddx)))
-    return np.concatenate(out_features)
+    return np.array(out_features), np.array(coin_distances)
 
 
 def state_to_features(self, game_state: dict) -> np.array:
@@ -167,15 +172,17 @@ def state_to_features(self, game_state: dict) -> np.array:
     what it contains.
 
     :param game_state:  A dictionary describing the current game board.
-    :return: np.array
+    :return: features (np.array),
+             coin_distances (np.array)
     """
     # This is the dict before the game begins and after it ends
     if game_state is None:
         return None
 
     agent_position = game_state['self'][3]
+    objective_features, coin_distances = find_closest_objectives(self, game_state, agent_position)
     return np.concatenate([adjacent_tile_features(self, game_state, agent_position),
-                           find_closest_objectives(self, game_state, agent_position)])
+                           objective_features]), coin_distances
 
 
 if __name__ == "__main__":
@@ -195,6 +202,6 @@ if __name__ == "__main__":
         'coins': [(0, 0), (1, 2), (1, 3), (3, 3)],
         'self': ("Name", 0, True, (3, 0))
     }
-    features = state_to_features(object(), game_state)
+    features, _ = state_to_features(object(), game_state)
     print(features)
-    assert (features == np.array([1, 0, 0, 3, 3, 3])).all()
+    assert (features == np.array([1, 0, 0, 3, 3])).all()

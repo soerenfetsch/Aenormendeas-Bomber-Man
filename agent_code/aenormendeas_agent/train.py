@@ -102,15 +102,15 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     :param events: The events that occurred when going from  `old_game_state` to `new_game_state`
     """
     self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
-    old_features = state_to_features(self, old_game_state)
-    new_features = state_to_features(self, new_game_state)
+    old_features, old_coin_distances = state_to_features(self, old_game_state)
+    new_features, new_coin_distances = state_to_features(self, new_game_state)
 
     # Custom events to hand out reward
     # event for moving closer to closest coin / farther away
     if e.COIN_COLLECTED not in events:
-        if new_features[5] < old_features[5]:
+        if new_coin_distances[0] < old_coin_distances[0]:
             events.append(MOVE_CLOSER_TO_COIN)
-        elif new_features[5] > old_features[5]:
+        elif new_coin_distances[0] > old_coin_distances[0]:
             events.append(MOVE_AWAY_FROM_COIN)
 
     # state_to_features is defined in callbacks.py
@@ -133,8 +133,9 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
     # TODO: Maybe end of game events?
     # Update the Q Values
+    last_features, _ = state_to_features(self, last_game_state)
     self.transitions.append(Transition(
-        state_to_features(self, last_game_state), last_action, None, reward_from_events(self, events)
+        last_features, last_action, None, reward_from_events(self, events)
     ))
     update_q_values(self)
 
