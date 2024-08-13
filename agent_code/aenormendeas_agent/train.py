@@ -20,7 +20,6 @@ PLACEHOLDER_EVENT = "PLACEHOLDER"
 MOVE_CLOSER_TO_COIN = "MOVE_CLOSER_TO_COIN"
 MOVE_AWAY_FROM_COIN = "MOVE_AWAY_FROM_COIN"
 
-
 def setup_training(self):
     """
     Initialise self for training purpose.
@@ -112,7 +111,7 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
             events.append(MOVE_CLOSER_TO_COIN)
         elif new_coin_distances[0] > old_coin_distances[0]:
             events.append(MOVE_AWAY_FROM_COIN)
-
+        
     # state_to_features is defined in callbacks.py
     self.transitions.append(Transition(old_features, self_action, new_features, reward_from_events(self, events)))
 

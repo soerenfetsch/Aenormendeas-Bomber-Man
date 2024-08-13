@@ -3,7 +3,7 @@ import pickle
 import random
 import numpy as np
 import heapq
-
+import settings as s
 
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 
@@ -161,6 +161,64 @@ def find_closest_objectives(self, game_state, agent_position):
                 heapq.heappush(q, (curr_dist+1, (ddy, ddx)))
     return np.array(out_features), np.array(coin_distances)
 
+def adjacent_explosions(self, game_state, agent_position):
+    '''
+    if 2 explosions are planned for 1 adjacent block, 
+    will only consider the explosion that happens sooner.
+    value of feature says how long until explosion over, meaning 
+    if bomb not exploded yet
+    value is bomb timer + explosion timer
+
+    walls stop explosion
+    '''
+    self.logger.debug("Converting adjacent fields to features")
+    y, x = agent_position
+    height, width = game_state['explosion_map'].shape
+    explosion_features = []
+    # UP DOWN LEFT RIGHT HERE
+    look = [(y-1, x), (y+1, x), (y, x-1), (y, x+1),(y,x)]
+    future_explosions = []
+    #problem: explosion doesnt go through walls
+    for b in game_state['bombs']:
+        x,y,t=b[0][0],b[0][1],b[1]+s.EXPLOSION_TIMER
+        future_explosions.append(b)
+        for dx in range(1,s.BOMB_POWER):
+            if game_state['field'][x+dx][y]==-1:
+                break
+            else:
+                future_explosions.append([(x+dx,y),t])
+        for dx in range(1,s.BOMB_POWER):
+            if game_state['field'][x-dx][y]==-1:
+                break
+            else:
+                future_explosions.append([(x-dx,y),t])
+        for dy in range(1,s.BOMB_POWER):
+            if game_state['field'][x][y+dy]==-1:
+                break
+            else:
+                future_explosions.append([(x,y+dy),t])
+        for dy in range(1,s.BOMB_POWER):
+            if game_state['field'][x][y-dy]==-1:
+                break
+            else:
+                future_explosions.append([(x,y-dy),t])
+
+    for dy, dx in look:
+        if game_state['explosion_map'][dx][dy]!=0:
+            explosion_features.append(game_state['explosion_map'][dx][dy])
+        else:
+            #fehler
+            explosions_at_dxdy = []
+            for x in future_explosions:
+                if x[0] == (dx,dy):
+                    explosions_at_dxdy.append(x[1])
+            if len(explosions_at_dxdy)!=0:
+                explosion_features.append(min(explosions_at_dxdy))
+            else:
+                explosion_features.append(0)
+
+    assert len(explosion_features) == 5
+    return np.array(explosion_features)
 
 def state_to_features(self, game_state: dict) -> np.array:
     """
@@ -181,7 +239,7 @@ def state_to_features(self, game_state: dict) -> np.array:
 
     agent_position = game_state['self'][3]
     objective_features, coin_distances = find_closest_objectives(self, game_state, agent_position)
-    return np.concatenate([adjacent_tile_features(self, game_state, agent_position),
+    return np.concatenate([adjacent_tile_features(self, game_state, agent_position),adjacent_explosions(self, game_state, agent_position),
                            objective_features]), coin_distances
 
 
