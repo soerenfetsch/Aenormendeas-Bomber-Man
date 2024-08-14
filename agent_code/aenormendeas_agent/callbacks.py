@@ -1,13 +1,17 @@
 import os
+import sys
 import pickle
 import random
 import numpy as np
 import heapq
+
+SRC_DIR = os.path.join(os.path.dirname(__file__), "..", "..")
+sys.path.append(SRC_DIR)
 import settings as s
 
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 
-N_CLOSEST_COINS = 1 # number of closest coins to consider for features
+N_CLOSEST_COINS = 1  # number of closest coins to consider for features
 
 Q_TABLE_FILE = "coin_collector_qtable.pkl"
 TRAIN_NEW = False
@@ -38,7 +42,8 @@ def setup(self):
         self.logger.info("Loading Q-Table from saved state.")
         with open(qtable_file, "rb") as file:
             self.q_table = pickle.load(file)
-        self.logger.debug(f"Loaded saved Q-Table with {len(self.q_table)} entries.")
+        self.logger.debug(
+            f"Loaded saved Q-Table with {len(self.q_table)} entries.")
 
 
 def act(self, game_state: dict) -> str:
@@ -55,7 +60,8 @@ def act(self, game_state: dict) -> str:
     """
     # Exploration vs exploitation
     if game_state is None or (self.train and np.random.rand() < self.epsilon):
-        self.logger.debug("Epsilon Exploration: Choosing action purely at random.")
+        self.logger.debug(
+            "Epsilon Exploration: Choosing action purely at random.")
         # 80%: walk in any direction. 10% wait. 10% bomb.
         return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .1, .1])
     self.logger.debug("Exploitation: Selecting best action using Q-Value.")
@@ -67,13 +73,14 @@ def act(self, game_state: dict) -> str:
     best_actions = [a for a, q in q_values.items() if q == max_q_value]
     return np.random.choice(best_actions)
 
+
 def adjacent_tile_features(self, game_state, agent_position):
     """ 
     Convert the agent's position and the game state to features for the 4 adjacent
     tiles UP, DOWN, LEFT, RIGHT. We encode each tile in binary:
     0: outside bound, 1: stone wall, 2: crate,
     3: free tile
-    
+
     :param: game_state (dict): The dictionary that describes everything on the board.
     :agent_position (np.array([x, y])): current coordinates of the agent
     :return: np.array(list)[4]: concatenated tile features UP, DOWN, LEFT, RIGHT
@@ -102,6 +109,8 @@ def adjacent_tile_features(self, game_state, agent_position):
     return np.array(tile_features)
 
 # TODO: add objectives crates and bombs
+
+
 def find_closest_objectives(self, game_state, agent_position):
     """
     Use Dijkstra's algorithm to construct shortest path search
@@ -149,7 +158,7 @@ def find_closest_objectives(self, game_state, agent_position):
                 coin_distances[coins_picked] = curr_dist
                 coins_picked += 1
         directions = [(dy-1, dx), (dy+1, dx), (dy, dx-1), (dy, dx+1)]
-        
+
         for ddy, ddx in directions:
             if not (0 <= ddx < width and 0 <= ddy < height):
                 continue
@@ -160,6 +169,7 @@ def find_closest_objectives(self, game_state, agent_position):
                 parents[ddy, ddx] = (dy, dx)
                 heapq.heappush(q, (curr_dist+1, (ddy, ddx)))
     return np.array(out_features), np.array(coin_distances)
+
 
 def adjacent_explosions(self, game_state, agent_position):
     '''
@@ -180,38 +190,38 @@ def adjacent_explosions(self, game_state, agent_position):
     future_explosions = []
     #problem: explosion doesnt go through walls
     for b in game_state['bombs']:
-        x,y,t=b[0][0],b[0][1],b[1]+s.EXPLOSION_TIMER
+        y,x,t=b[0][0],b[0][1],b[1]+s.EXPLOSION_TIMER
         future_explosions.append(b)
-        for dx in range(1,s.BOMB_POWER):
-            if game_state['field'][x+dx][y]==-1:
-                break
-            else:
-                future_explosions.append([(x+dx,y),t])
-        for dx in range(1,s.BOMB_POWER):
-            if game_state['field'][x-dx][y]==-1:
-                break
-            else:
-                future_explosions.append([(x-dx,y),t])
         for dy in range(1,s.BOMB_POWER):
-            if game_state['field'][x][y+dy]==-1:
+            if game_state['field'][y+dy][x]==-1:
                 break
             else:
-                future_explosions.append([(x,y+dy),t])
+                future_explosions.append([(y+dy,x),t])
         for dy in range(1,s.BOMB_POWER):
-            if game_state['field'][x][y-dy]==-1:
+            if game_state['field'][y-dy][x]==-1:
                 break
             else:
-                future_explosions.append([(x,y-dy),t])
+                future_explosions.append([(y-dy,x),t])
+        for dx in range(1,s.BOMB_POWER):
+            if game_state['field'][y][x+dx]==-1:
+                break
+            else:
+                future_explosions.append([(y,x+dx),t])
+        for dy in range(1,s.BOMB_POWER):
+            if game_state['field'][y][x-dx]==-1:
+                break
+            else:
+                future_explosions.append([(y,x-dx),t])
 
     for dy, dx in look:
-        if game_state['explosion_map'][dx][dy]!=0:
-            explosion_features.append(game_state['explosion_map'][dx][dy])
+        if game_state['explosion_map'][dy][dx]!=0:
+            explosion_features.append(game_state['explosion_map'][dy][dx])
         else:
             #fehler
             explosions_at_dxdy = []
-            for x in future_explosions:
-                if x[0] == (dx,dy):
-                    explosions_at_dxdy.append(x[1])
+            for e in future_explosions:
+                if e[0] == (dy,dx):
+                    explosions_at_dxdy.append(e[1])
             if len(explosions_at_dxdy)!=0:
                 explosion_features.append(min(explosions_at_dxdy))
             else:
@@ -219,6 +229,7 @@ def adjacent_explosions(self, game_state, agent_position):
 
     assert len(explosion_features) == 5
     return np.array(explosion_features)
+
 
 def state_to_features(self, game_state: dict) -> np.array:
     """
@@ -238,8 +249,10 @@ def state_to_features(self, game_state: dict) -> np.array:
         return None
 
     agent_position = game_state['self'][3]
-    objective_features, coin_distances = find_closest_objectives(self, game_state, agent_position)
-    return np.concatenate([adjacent_tile_features(self, game_state, agent_position),adjacent_explosions(self, game_state, agent_position),
+    objective_features, coin_distances = find_closest_objectives(
+        self, game_state, agent_position)
+    return np.concatenate([adjacent_tile_features(self, game_state, agent_position),
+                           adjacent_explosions(self, game_state, agent_position),
                            objective_features]), coin_distances
 
 
@@ -253,13 +266,22 @@ if __name__ == "__main__":
     game_state = {
         'round': 0,
         'step': 0,
-        'field': np.array([[0, 0, 0, -1],
-                          [0, 0, 0, 0],
-                          [-1, -1, 0, -1],
-                          [0, 0, 0, 0]]),
-        'coins': [(0, 0), (1, 2), (1, 3), (3, 3)],
-        'self': ("Name", 0, True, (3, 0))
+        'field': np.array([[-1, -1, -1, -1, -1, -1],
+                          [-1, 0, 0, 0, -1, -1],
+                          [-1, 0, 0, 0, 0, -1],
+                          [-1, -1, -1, 0, -1, -1],
+                          [-1, 0, 0, 0, 0, -1],
+                          [-1, -1, -1, -1, -1, -1]]),
+        'coins': [(1, 1), (2, 3), (2, 4), (4, 4)],
+        'self': ("Name", 0, True, (4, 2)),
+        'bombs': [[(1, 1), 3], [(2, 3), 1]],
+        'explosion_map': np.array([[0, 0, 0, 0, 0, 0],
+                                   [0, 0, 0, 0, 0, 0],
+                                   [0, 0, 0, 0, 0, 0],
+                                   [0, 0, 0, 0, 0, 0],
+                                   [0, 1, 0, 0, 0, 0],
+                                   [0, 0, 0, 0, 0, 0]])
     }
     features, _ = state_to_features(object(), game_state)
     print(features)
-    assert (features == np.array([1, 0, 0, 3, 3])).all()
+    assert (features == np.array([1, 1, 3, 3, 0, 0, 1, 3, 0, 3])).all()
