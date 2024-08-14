@@ -4,7 +4,7 @@ import pickle
 from typing import List
 
 import events as e
-from .callbacks import state_to_features, N_CLOSEST_COINS, Q_TABLE_FILE, ACTIONS
+from .callbacks import state_to_features, Q_TABLE_FILE, ACTIONS
 
 # This is only an example!
 Transition = namedtuple('Transition',
@@ -19,6 +19,9 @@ PLACEHOLDER_EVENT = "PLACEHOLDER"
 # Custom events
 MOVE_CLOSER_TO_COIN = "MOVE_CLOSER_TO_COIN"
 MOVE_AWAY_FROM_COIN = "MOVE_AWAY_FROM_COIN"
+MOVE_CLOSER_TO_CRATE = "MOVE_CLOSER_TO_CRATE"
+MOVE_AWAY_FROM_CRATE = "MOVE_AWAY_FROM_CRATE"
+DROPPED_BOMB_AT_CRATE = "DROPPED_BOMB_AT_CRATE"
 
 def setup_training(self):
     """
@@ -38,14 +41,18 @@ def setup_training(self):
 
     # TODO: Add more rewards for upcoming tasks
     self.game_rewards = {
-        e.COIN_COLLECTED: 150.0,
+        e.COIN_COLLECTED: 250.0,
         e.KILLED_SELF: -50.0,
-        e.GOT_KILLED: -200.0,
+        e.GOT_KILLED: -400.0,
         PLACEHOLDER_EVENT: 0.0,
         e.INVALID_ACTION: -200.0,
         MOVE_CLOSER_TO_COIN: 30.0,
-        MOVE_AWAY_FROM_COIN: -10.0,
+        MOVE_AWAY_FROM_COIN: -30.0,
+        MOVE_CLOSER_TO_CRATE: 5.0,
+        MOVE_AWAY_FROM_CRATE: -5.0,
         e.WAITED: 0.0,
+        e.CRATE_DESTROYED: 30.0,
+        DROPPED_BOMB_AT_CRATE: 200.0,
     }
 
 def update_q_values(self):
@@ -101,16 +108,30 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     :param events: The events that occurred when going from  `old_game_state` to `new_game_state`
     """
     self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
-    old_features, old_coin_distances = state_to_features(self, old_game_state)
-    new_features, new_coin_distances = state_to_features(self, new_game_state)
+    old_features, old_objective_distances = state_to_features(self, old_game_state)
+    new_features, new_objective_distances = state_to_features(self, new_game_state)
+
+    old_coin_distances = old_objective_distances[0]
+    new_coin_distances = new_objective_distances[0]
+
+    old_crate_distances = old_objective_distances[1]
+    new_crate_distances = new_objective_distances[1]
 
     # Custom events to hand out reward
     # event for moving closer to closest coin / farther away
     if e.COIN_COLLECTED not in events:
-        if new_coin_distances[0] < old_coin_distances[0]:
+        if new_coin_distances < old_coin_distances:
             events.append(MOVE_CLOSER_TO_COIN)
-        elif new_coin_distances[0] > old_coin_distances[0]:
+        elif new_coin_distances > old_coin_distances:
             events.append(MOVE_AWAY_FROM_COIN)
+    if e.COIN_COLLECTED not in events and e.BOMB_DROPPED not in events:
+        if new_crate_distances < old_crate_distances:
+            events.append(MOVE_CLOSER_TO_CRATE)
+        elif new_crate_distances > old_crate_distances:
+            events.append(MOVE_AWAY_FROM_CRATE)
+    if e.BOMB_DROPPED in events and any(old_features[:4] == 2):
+        events.append(DROPPED_BOMB_AT_CRATE)
+
         
     # state_to_features is defined in callbacks.py
     self.transitions.append(Transition(old_features, self_action, new_features, reward_from_events(self, events)))

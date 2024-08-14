@@ -12,8 +12,9 @@ import settings as s
 ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 
 N_CLOSEST_COINS = 1  # number of closest coins to consider for features
+N_CLOSEST_CRATES = 1  # number of closest crates to consider for features
 
-Q_TABLE_FILE = "coins_and_bombs_qtable.pkl"
+Q_TABLE_FILE = "coins_crates_bombs_qtable.pkl"
 TRAIN_NEW = False
 
 
@@ -137,16 +138,21 @@ def find_closest_objectives(self, game_state, agent_position):
     parents[y, x] = (y, x)
     q = [(0, (y, x))]
     coins_picked = 0
-    out_features = [-1 for _ in range(N_CLOSEST_COINS)]
+    crates_picked = 0
+    out_features_coins = [-1 for _ in range(N_CLOSEST_COINS)]
     coin_distances = [float('inf') for _ in range(N_CLOSEST_COINS)]
+    out_features_crates = [-1 for _ in range(N_CLOSEST_CRATES)]
+    crate_distances = [float('inf') for _ in range(N_CLOSEST_CRATES)]
     max_coins = min(N_CLOSEST_COINS, len(game_state['coins']))
-    while not len(q) == 0 and coins_picked < max_coins:
+    max_crates = min(N_CLOSEST_CRATES, np.count_nonzero(game_state['field'] == 1))
+    while not len(q) == 0 and (coins_picked < max_coins or crates_picked < max_crates):
         curr_dist, (dy, dx) = heapq.heappop(q)
         if curr_dist > distances[dx, dy]:
             continue
-        if (dy, dx) in game_state['coins']:
+        # If coin is found
+        if coins_picked < max_coins and (dy, dx) in game_state['coins']:
             if (dy, dx) == (y, x):
-                out_features[coins_picked] = -1
+                out_features_coins[coins_picked] = -1
                 coin_distances[coins_picked] = curr_dist
                 coins_picked += 1
             else:
@@ -154,21 +160,36 @@ def find_closest_objectives(self, game_state, agent_position):
                 while (ddy, ddx) not in neighbors:
                     ddy, ddx = parents[ddy, ddx]
                 index = neighbors.index((ddy, ddx))
-                out_features[coins_picked] = index
+                out_features_coins[coins_picked] = index
                 coin_distances[coins_picked] = curr_dist
                 coins_picked += 1
+        # If crate is found
+        if crates_picked < max_crates and game_state['field'][dy, dx] == 1:
+            if (dy, dx) == (y, x):
+                out_features_crates[crates_picked] = -1
+                crate_distances[crates_picked] = curr_dist
+                crates_picked += 1
+            else:
+                ddy, ddx = dy, dx
+                while (ddy, ddx) not in neighbors:
+                    ddy, ddx = parents[ddy, ddx]
+                index = neighbors.index((ddy, ddx))
+                out_features_crates[crates_picked] = index
+                crate_distances[crates_picked] = curr_dist
+                crates_picked += 1
         directions = [(dy-1, dx), (dy+1, dx), (dy, dx-1), (dy, dx+1)]
 
         for ddy, ddx in directions:
             if not (0 <= ddx < width and 0 <= ddy < height):
                 continue
-            if game_state['field'][ddy, ddx] != 0:
+            if game_state['field'][ddy, ddx] not in (0, 1):
                 continue
             if curr_dist + 1 < distances[ddy, ddx]:
                 distances[ddy, ddx] = curr_dist + 1
                 parents[ddy, ddx] = (dy, dx)
                 heapq.heappush(q, (curr_dist+1, (ddy, ddx)))
-    return np.array(out_features), np.array(coin_distances)
+    return (np.concatenate([out_features_coins, out_features_crates]),
+            np.concatenate([coin_distances, crate_distances]))
 
 
 def adjacent_explosions(self, game_state, agent_position):
@@ -242,18 +263,18 @@ def state_to_features(self, game_state: dict) -> np.array:
 
     :param game_state:  A dictionary describing the current game board.
     :return: features (np.array),
-             coin_distances (np.array)
+             objective_distances (np.array)
     """
     # This is the dict before the game begins and after it ends
     if game_state is None:
         return None
 
     agent_position = game_state['self'][3]
-    objective_features, coin_distances = find_closest_objectives(
+    objective_features, objective_distances = find_closest_objectives(
         self, game_state, agent_position)
     return np.concatenate([adjacent_tile_features(self, game_state, agent_position),
                            adjacent_explosions(self, game_state, agent_position),
-                           objective_features]), coin_distances
+                           objective_features]), objective_distances
 
 
 if __name__ == "__main__":
@@ -268,7 +289,7 @@ if __name__ == "__main__":
         'step': 0,
         'field': np.array([[-1, -1, -1, -1, -1, -1],
                           [-1, 0, 0, 0, -1, -1],
-                          [-1, 0, 0, 0, 0, -1],
+                          [-1, 1, 0, 0, 0, -1],
                           [-1, -1, -1, 0, -1, -1],
                           [-1, 0, 0, 0, 0, -1],
                           [-1, -1, -1, -1, -1, -1]]),
@@ -282,6 +303,8 @@ if __name__ == "__main__":
                                    [0, 1, 0, 0, 0, 0],
                                    [0, 0, 0, 0, 0, 0]])
     }
-    features, _ = state_to_features(object(), game_state)
+    features, objective_distances = state_to_features(object(), game_state)
     print(features)
-    assert (features == np.array([1, 1, 3, 3, 0, 0, 1, 3, 0, 3])).all()
+    print(objective_distances)
+    print(features[:4])
+    assert (features == np.array([1, 1, 3, 3, 0, 0, 1, 3, 0, 3, 3])).all()
