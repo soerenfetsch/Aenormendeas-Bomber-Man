@@ -13,7 +13,7 @@ ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 
 N_CLOSEST_COINS = 1  # number of closest coins to consider for features
 
-Q_TABLE_FILE = "coin_collector_qtable.pkl"
+Q_TABLE_FILE = "coins_and_bombs_qtable.pkl"
 TRAIN_NEW = False
 
 
