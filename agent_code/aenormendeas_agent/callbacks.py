@@ -75,12 +75,56 @@ def act(self, game_state: dict) -> str:
     return np.random.choice(best_actions)
 
 
+def get_adv_bomb_field(self, game_state):
+    """ 
+    Get a matrix of the explosion state including future explosions
+    of placed bombs taking the length of the explosion at every position
+    where there is an explosion or adding the length of an entire explosion
+    to the minimum bomb timer of a field where a bomb will explode in the
+    future.
+
+    :param self: The same object that is passed to all of your callbacks.
+    :param game_state: The dictionary that describes everything on the board.
+    :return: map (np.array): map of field size with every entry as explained
+    """
+    original_field = game_state['explosion_map']
+
+    future_explosions = []
+    for b in game_state['bombs']:
+        y, x, t = b[0][0], b[0][1], b[1]+s.EXPLOSION_TIMER
+        future_explosions.append(b)
+        for dy in range(1, s.BOMB_POWER):
+            if game_state['field'][y+dy][x] == -1:
+                break
+            else:
+                future_explosions.append([(y+dy, x), t])
+        for dy in range(1, s.BOMB_POWER):
+            if game_state['field'][y-dy][x] == -1:
+                break
+            else:
+                future_explosions.append([(y-dy, x), t])
+        for dx in range(1, s.BOMB_POWER):
+            if game_state['field'][y][x+dx] == -1:
+                break
+            else:
+                future_explosions.append([(y, x+dx), t])
+        for dy in range(1, s.BOMB_POWER):
+            if game_state['field'][y][x-dx] == -1:
+                break
+            else:
+                future_explosions.append([(y, x-dx), t])
+    for coord, t in future_explosions:
+        if original_field[coord] == 0 or t < original_field[coord]:
+            original_field[coord] = t
+
+    return original_field
+
+
 def adjacent_tile_features(self, game_state, agent_position):
     """ 
     Convert the agent's position and the game state to features for the 4 adjacent
-    tiles UP, DOWN, LEFT, RIGHT. We encode each tile in binary:
-    0: outside bound, 1: stone wall, 2: crate,
-    3: free tile
+    tiles UP, DOWN, LEFT, RIGHT. We encode each tile:
+    0: outside bound, 1: stone wall, 2: crate, 3: free tile
 
     :param: game_state (dict): The dictionary that describes everything on the board.
     :agent_position (np.array([x, y])): current coordinates of the agent
@@ -144,7 +188,8 @@ def find_closest_objectives(self, game_state, agent_position):
     out_features_crates = [-1 for _ in range(N_CLOSEST_CRATES)]
     crate_distances = [float('inf') for _ in range(N_CLOSEST_CRATES)]
     max_coins = min(N_CLOSEST_COINS, len(game_state['coins']))
-    max_crates = min(N_CLOSEST_CRATES, np.count_nonzero(game_state['field'] == 1))
+    max_crates = min(N_CLOSEST_CRATES, np.count_nonzero(
+        game_state['field'] == 1))
     while not len(q) == 0 and (coins_picked < max_coins or crates_picked < max_crates):
         curr_dist, (dy, dx) = heapq.heappop(q)
         if curr_dist > distances[dx, dy]:
@@ -207,58 +252,59 @@ def adjacent_explosions(self, game_state, agent_position):
     height, width = game_state['explosion_map'].shape
     explosion_features = []
     # UP DOWN LEFT RIGHT HERE
-    look = [(y-1, x), (y+1, x), (y, x-1), (y, x+1),(y,x)]
+    look = [(y-1, x), (y+1, x), (y, x-1), (y, x+1), (y, x)]
     future_explosions = []
-    #problem: explosion doesnt go through walls
+    # problem: explosion doesnt go through walls
     for b in game_state['bombs']:
-        y,x,t=b[0][0],b[0][1],b[1]+s.EXPLOSION_TIMER
+        y, x, t = b[0][0], b[0][1], b[1]+s.EXPLOSION_TIMER
         future_explosions.append(b)
-        for dy in range(1,s.BOMB_POWER):
-            if game_state['field'][y+dy][x]==-1:
+        for dy in range(1, s.BOMB_POWER):
+            if game_state['field'][y+dy][x] == -1:
                 break
             else:
-                future_explosions.append([(y+dy,x),t])
-        for dy in range(1,s.BOMB_POWER):
-            if game_state['field'][y-dy][x]==-1:
+                future_explosions.append([(y+dy, x), t])
+        for dy in range(1, s.BOMB_POWER):
+            if game_state['field'][y-dy][x] == -1:
                 break
             else:
-                future_explosions.append([(y-dy,x),t])
-        for dx in range(1,s.BOMB_POWER):
-            if game_state['field'][y][x+dx]==-1:
+                future_explosions.append([(y-dy, x), t])
+        for dx in range(1, s.BOMB_POWER):
+            if game_state['field'][y][x+dx] == -1:
                 break
             else:
-                future_explosions.append([(y,x+dx),t])
-        for dy in range(1,s.BOMB_POWER):
-            if game_state['field'][y][x-dx]==-1:
+                future_explosions.append([(y, x+dx), t])
+        for dy in range(1, s.BOMB_POWER):
+            if game_state['field'][y][x-dx] == -1:
                 break
             else:
-                future_explosions.append([(y,x-dx),t])
+                future_explosions.append([(y, x-dx), t])
 
     for dy, dx in look:
-        if game_state['explosion_map'][dy][dx]!=0:
+        if game_state['explosion_map'][dy][dx] != 0:
             explosion_features.append(game_state['explosion_map'][dy][dx])
         else:
-            #fehler
+            # fehler
             explosions_at_dxdy = []
             for e in future_explosions:
-                if e[0] == (dy,dx):
+                if e[0] == (dy, dx):
                     explosions_at_dxdy.append(e[1])
-            if len(explosions_at_dxdy)!=0:
+            if len(explosions_at_dxdy) != 0:
                 explosion_features.append(min(explosions_at_dxdy))
             else:
                 explosion_features.append(0)
 
     assert len(explosion_features) == 5
     return np.array(explosion_features)
-     
+
 
 def escape(self, game_state, agent_position):
-    
-    self.logger.debug("Finding closest coin objectives.")
+
+    self.logger.debug("Finding closest escape route.")
     y, x = agent_position
+    adv_explosion_map = get_adv_bomb_field(self, game_state)
     # UP DOWN LEFT RIGHT
-    if game_state['explosion_map'][y,x]==0:
-        return np.array([0]),0
+    if adv_explosion_map[y, x] == 0:
+        return np.array([0]), 0
     neighbors = [(y-1, x), (y+1, x), (y, x-1), (y, x+1)]
     height, width = game_state['field'].shape
     distances = np.ones(game_state['field'].shape) * float('inf')
@@ -270,13 +316,14 @@ def escape(self, game_state, agent_position):
     escapes_picked = 0
     out_features_escapes = [-1 for _ in range(1)]
     escape_distances = [float('inf') for _ in range(1)]
-    max_escapes = min(1, np.sum((game_state['field']==0)==(game_state['explosion_map']==0),axis=(0,1)))
+    max_escapes = min(1, np.sum((game_state['field'] == 0) == (
+        adv_explosion_map == 0), axis=(0, 1)))
     while not len(q) == 0 and (escapes_picked < max_escapes):
         curr_dist, (dy, dx) = heapq.heappop(q)
         if curr_dist > distances[dx, dy]:
             continue
         # If coin is found
-        if escapes_picked < max_escapes and game_state['explosion_map'][dy,dx]==0:
+        if escapes_picked < max_escapes and adv_explosion_map[dy, dx] == 0:
             if (dy, dx) == (y, x):
                 out_features_escapes[escapes_picked] = -1
                 escape_distances[escapes_picked] = curr_dist
@@ -289,7 +336,7 @@ def escape(self, game_state, agent_position):
                 out_features_escapes[escapes_picked] = index
                 escape_distances[escapes_picked] = curr_dist
                 escapes_picked += 1
-        
+
         directions = [(dy-1, dx), (dy+1, dx), (dy, dx-1), (dy, dx+1)]
 
         for ddy, ddx in directions:
@@ -302,6 +349,35 @@ def escape(self, game_state, agent_position):
                 parents[ddy, ddx] = (dy, dx)
                 heapq.heappush(q, (curr_dist+1, (ddy, ddx)))
     return np.array(out_features_escapes), escape_distances
+
+
+def number_of_crates_in_rad(self, game_state, agent_position):
+    self.logger.debug("Finding number of crates in bomb range.")
+    y, x = agent_position
+    height, width = game_state['explosion_map'].shape
+    crate_count = game_state['field'][y][x]
+    for dy in range(1, s.BOMB_POWER):
+        if y+dy >= height or game_state['field'][y+dy][x] == -1:
+            break
+        if game_state['field'][y+dy][x] == 1:
+            crate_count += 1
+    for dy in range(1, s.BOMB_POWER):
+        if y-dy < 0 or game_state['field'][y-dy][x] == -1:
+            break
+        if game_state['field'][y-dy][x] == 1:
+            crate_count += 1
+    for dx in range(1, s.BOMB_POWER):
+        if x+dx >= width or game_state['field'][y][x+dx] == -1:
+            break
+        if game_state['field'][y][x+dx] == 1:
+            crate_count += 1
+    for dy in range(1, s.BOMB_POWER):
+        if x-dx < 0 or game_state['field'][y-dy][x-dx] == -1:
+            break
+        if game_state['field'][y][x-dx] == 1:
+            crate_count += 1
+    return np.array([crate_count])
+
 
 def state_to_features(self, game_state: dict) -> np.array:
     """
@@ -323,11 +399,15 @@ def state_to_features(self, game_state: dict) -> np.array:
     agent_position = game_state['self'][3]
     objective_features, objective_distances = find_closest_objectives(
         self, game_state, agent_position)
-    escape_dir,escape_dist = escape(self, game_state, agent_position)
-    return np.concatenate([adjacent_tile_features(self, game_state, agent_position),
-                           adjacent_explosions(self, game_state, agent_position),
+    escape_dir, escape_dist = escape(self, game_state, agent_position)
+    return (np.concatenate([adjacent_tile_features(self, game_state, agent_position),
+                           adjacent_explosions(
+                               self, game_state, agent_position),
                            objective_features,
-                           escape_dir]), objective_distances, escape_dist
+                           escape_dir,
+                           number_of_crates_in_rad(self, game_state, agent_position)]),
+            objective_distances,
+            escape_dist)
 
 
 if __name__ == "__main__":
@@ -356,9 +436,22 @@ if __name__ == "__main__":
                                    [0, 1, 1, 1, 1, 0],
                                    [0, 0, 0, 0, 0, 0]])
     }
-    features, objective_distances, escape_distance = state_to_features(object(), game_state)
+    features, objective_distances, escape_distance = state_to_features(
+        object(), game_state)
     print(features)
     print(objective_distances)
-    print(features[:4])
-    assert (len(features) == len(np.array([1, 1, 3, 3, 0, 0, 1, 3, 0, 3, 3, 3])))
-    assert (features == np.array([1, 1, 3, 3, 0, 0, 1, 3, 0, 3, 3, 3])).all()
+    print(escape_distance)
+    assert (len(features) == len(
+        np.array([1, 1, 3, 3, 0, 0, 1, 1, 1, 3, 3, -1, 0])))
+    assert (features == np.array([1, 1, 3, 3, 0, 0, 1, 1, 1, 3, 3, -1, 0])).all()
+
+    # Test the advanced bomb map
+    adv_bomb_map = get_adv_bomb_field(object(), game_state)
+    print(adv_bomb_map)
+    assert adv_bomb_map.shape == game_state['field'].shape
+    assert (adv_bomb_map == np.array([[0, 0, 0, 0, 0, 0],
+                                      [0, 1, 1, 3, 0, 0],
+                                      [0, 3, 1, 1, 3, 0],
+                                      [0, 0, 0, 3, 0, 0],
+                                      [0, 1, 1, 1, 1, 0],
+                                      [0, 0, 0, 0, 0, 0]])).all()

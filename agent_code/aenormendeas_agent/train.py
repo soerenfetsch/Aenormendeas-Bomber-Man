@@ -24,6 +24,7 @@ MOVE_AWAY_FROM_CRATE = "MOVE_AWAY_FROM_CRATE"
 DROPPED_BOMB_AT_CRATE = "DROPPED_BOMB_AT_CRATE"
 NOTHING_HAPPENED = "NOTHING_HAPPENED"
 OSCILLATING = 'OSCILLATING'
+INEFFECTIVE_BOMB = 'INEFFECTIVE_BOMB'
 
 oldold_position = (-999,-999)
 
@@ -41,8 +42,8 @@ def setup_training(self):
     # set up training parameters for exploration and learning
     # TODO: Maybe do epsilon decay starting with lots of exploration?
     self.epsilon = 0.2
-    self.gamma = 0.9
-    self.alpha = 0.1
+    self.gamma = 0.99
+    self.alpha = 0.2
 
     # TODO: Add more rewards for upcoming tasks
     self.game_rewards = {
@@ -51,15 +52,16 @@ def setup_training(self):
         e.GOT_KILLED: -400.0,
         PLACEHOLDER_EVENT: 0.0,
         e.INVALID_ACTION: -200.0,
-        MOVE_CLOSER_TO_COIN: 30.0,
+        MOVE_CLOSER_TO_COIN: 0.0,
         MOVE_AWAY_FROM_COIN: -30.0,
-        MOVE_CLOSER_TO_CRATE: 5.0,
+        MOVE_CLOSER_TO_CRATE: 0.0,
         MOVE_AWAY_FROM_CRATE: -5.0,
         e.WAITED: -15.0,
         e.CRATE_DESTROYED: 30.0,
         DROPPED_BOMB_AT_CRATE: 150.0,
         NOTHING_HAPPENED: -2,
-        OSCILLATING: -20
+        OSCILLATING: -20,
+        INEFFECTIVE_BOMB: -100
     }
 
 def update_q_values(self):
@@ -143,6 +145,8 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
         events.append(NOTHING_HAPPENED)
     if oldold_position==new_game_state['self'][3]:
         events.append(OSCILLATING)
+    if e.BOMB_EXPLODED in events and e.CRATE_DESTROYED not in events:
+        events.append(INEFFECTIVE_BOMB)
     oldold_position = old_game_state['self'][3]
     # state_to_features is defined in callbacks.py
     self.transitions.append(Transition(old_features, self_action, new_features, reward_from_events(self, events)))
