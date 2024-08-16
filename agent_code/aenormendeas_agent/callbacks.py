@@ -66,7 +66,7 @@ def act(self, game_state: dict) -> str:
         # 80%: walk in any direction. 10% wait. 10% bomb.
         return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .1, .1])
     self.logger.debug("Exploitation: Selecting best action using Q-Value.")
-    features, _ = state_to_features(self, game_state)
+    features, _, __ = state_to_features(self, game_state)
     q_values: dict = self.q_table.get(tuple(features),
                                       {a: 0.0 for a in ACTIONS})
     # print(f"Given features: {features}, Q-values: {q_values}")
@@ -250,7 +250,58 @@ def adjacent_explosions(self, game_state, agent_position):
 
     assert len(explosion_features) == 5
     return np.array(explosion_features)
+     
 
+def escape(self, game_state, agent_position):
+    
+    self.logger.debug("Finding closest coin objectives.")
+    y, x = agent_position
+    # UP DOWN LEFT RIGHT
+    if game_state['explosion_map'][y,x]==0:
+        return np.array([0]),0
+    neighbors = [(y-1, x), (y+1, x), (y, x-1), (y, x+1)]
+    height, width = game_state['field'].shape
+    distances = np.ones(game_state['field'].shape) * float('inf')
+    distances[y, x] = 0
+    parents = np.zeros(game_state['field'].shape,
+                       dtype=np.dtype([('y', int), ('x', int)]))
+    parents[y, x] = (y, x)
+    q = [(0, (y, x))]
+    escapes_picked = 0
+    out_features_escapes = [-1 for _ in range(1)]
+    escape_distances = [float('inf') for _ in range(1)]
+    max_escapes = min(1, np.sum((game_state['field']==0)==(game_state['explosion_map']==0),axis=(0,1)))
+    while not len(q) == 0 and (escapes_picked < max_escapes):
+        curr_dist, (dy, dx) = heapq.heappop(q)
+        if curr_dist > distances[dx, dy]:
+            continue
+        # If coin is found
+        if escapes_picked < max_escapes and game_state['explosion_map'][dy,dx]==0:
+            if (dy, dx) == (y, x):
+                out_features_escapes[escapes_picked] = -1
+                escape_distances[escapes_picked] = curr_dist
+                escapes_picked += 1
+            else:
+                ddy, ddx = dy, dx
+                while (ddy, ddx) not in neighbors:
+                    ddy, ddx = parents[ddy, ddx]
+                index = neighbors.index((ddy, ddx))
+                out_features_escapes[escapes_picked] = index
+                escape_distances[escapes_picked] = curr_dist
+                escapes_picked += 1
+        
+        directions = [(dy-1, dx), (dy+1, dx), (dy, dx-1), (dy, dx+1)]
+
+        for ddy, ddx in directions:
+            if not (0 <= ddx < width and 0 <= ddy < height):
+                continue
+            if game_state['field'][ddy, ddx] not in (0, 1):
+                continue
+            if curr_dist + 1 < distances[ddy, ddx]:
+                distances[ddy, ddx] = curr_dist + 1
+                parents[ddy, ddx] = (dy, dx)
+                heapq.heappush(q, (curr_dist+1, (ddy, ddx)))
+    return np.array(out_features_escapes), escape_distances
 
 def state_to_features(self, game_state: dict) -> np.array:
     """
@@ -272,9 +323,11 @@ def state_to_features(self, game_state: dict) -> np.array:
     agent_position = game_state['self'][3]
     objective_features, objective_distances = find_closest_objectives(
         self, game_state, agent_position)
+    escape_dir,escape_dist = escape(self, game_state, agent_position)
     return np.concatenate([adjacent_tile_features(self, game_state, agent_position),
                            adjacent_explosions(self, game_state, agent_position),
-                           objective_features]), objective_distances
+                           objective_features,
+                           escape_dir]), objective_distances, escape_dist
 
 
 if __name__ == "__main__":
@@ -297,14 +350,15 @@ if __name__ == "__main__":
         'self': ("Name", 0, True, (4, 2)),
         'bombs': [[(1, 1), 3], [(2, 3), 1]],
         'explosion_map': np.array([[0, 0, 0, 0, 0, 0],
+                                   [0, 1, 1, 0, 0, 0],
+                                   [0, 0, 1, 1, 0, 0],
                                    [0, 0, 0, 0, 0, 0],
-                                   [0, 0, 0, 0, 0, 0],
-                                   [0, 0, 0, 0, 0, 0],
-                                   [0, 1, 0, 0, 0, 0],
+                                   [0, 1, 1, 1, 1, 0],
                                    [0, 0, 0, 0, 0, 0]])
     }
-    features, objective_distances = state_to_features(object(), game_state)
+    features, objective_distances, escape_distance = state_to_features(object(), game_state)
     print(features)
     print(objective_distances)
     print(features[:4])
-    assert (features == np.array([1, 1, 3, 3, 0, 0, 1, 3, 0, 3, 3])).all()
+    assert (len(features) == len(np.array([1, 1, 3, 3, 0, 0, 1, 3, 0, 3, 3, 3])))
+    assert (features == np.array([1, 1, 3, 3, 0, 0, 1, 3, 0, 3, 3, 3])).all()

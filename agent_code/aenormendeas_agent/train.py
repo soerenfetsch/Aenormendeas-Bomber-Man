@@ -22,6 +22,11 @@ MOVE_AWAY_FROM_COIN = "MOVE_AWAY_FROM_COIN"
 MOVE_CLOSER_TO_CRATE = "MOVE_CLOSER_TO_CRATE"
 MOVE_AWAY_FROM_CRATE = "MOVE_AWAY_FROM_CRATE"
 DROPPED_BOMB_AT_CRATE = "DROPPED_BOMB_AT_CRATE"
+NOTHING_HAPPENED = "NOTHING_HAPPENED"
+OSCILLATING = 'OSCILLATING'
+
+oldold_position = (-999,-999)
+
 
 def setup_training(self):
     """
@@ -41,8 +46,8 @@ def setup_training(self):
 
     # TODO: Add more rewards for upcoming tasks
     self.game_rewards = {
-        e.COIN_COLLECTED: 250.0,
-        e.KILLED_SELF: -50.0,
+        e.COIN_COLLECTED: 300.0,
+        e.KILLED_SELF: -600.0,
         e.GOT_KILLED: -400.0,
         PLACEHOLDER_EVENT: 0.0,
         e.INVALID_ACTION: -200.0,
@@ -50,9 +55,11 @@ def setup_training(self):
         MOVE_AWAY_FROM_COIN: -30.0,
         MOVE_CLOSER_TO_CRATE: 5.0,
         MOVE_AWAY_FROM_CRATE: -5.0,
-        e.WAITED: 0.0,
+        e.WAITED: -15.0,
         e.CRATE_DESTROYED: 30.0,
-        DROPPED_BOMB_AT_CRATE: 200.0,
+        DROPPED_BOMB_AT_CRATE: 150.0,
+        NOTHING_HAPPENED: -2,
+        OSCILLATING: -20
     }
 
 def update_q_values(self):
@@ -108,8 +115,8 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     :param events: The events that occurred when going from  `old_game_state` to `new_game_state`
     """
     self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
-    old_features, old_objective_distances = state_to_features(self, old_game_state)
-    new_features, new_objective_distances = state_to_features(self, new_game_state)
+    old_features, old_objective_distances, _ = state_to_features(self, old_game_state)
+    new_features, new_objective_distances, _ = state_to_features(self, new_game_state)
 
     old_coin_distances = old_objective_distances[0]
     new_coin_distances = new_objective_distances[0]
@@ -117,6 +124,7 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     old_crate_distances = old_objective_distances[1]
     new_crate_distances = new_objective_distances[1]
 
+    global oldold_position
     # Custom events to hand out reward
     # event for moving closer to closest coin / farther away
     if e.COIN_COLLECTED not in events:
@@ -131,8 +139,11 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
             events.append(MOVE_AWAY_FROM_CRATE)
     if e.BOMB_DROPPED in events and any(old_features[:4] == 2):
         events.append(DROPPED_BOMB_AT_CRATE)
-
-        
+    if e.COIN_COLLECTED not in events and e.CRATE_DESTROYED and e.KILLED_OPPONENT not in events:
+        events.append(NOTHING_HAPPENED)
+    if oldold_position==new_game_state['self'][3]:
+        events.append(OSCILLATING)
+    oldold_position = old_game_state['self'][3]
     # state_to_features is defined in callbacks.py
     self.transitions.append(Transition(old_features, self_action, new_features, reward_from_events(self, events)))
 
@@ -153,7 +164,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
     # TODO: Maybe end of game events?
     # Update the Q Values
-    last_features, _ = state_to_features(self, last_game_state)
+    last_features, _, _ = state_to_features(self, last_game_state)
     self.transitions.append(Transition(
         last_features, last_action, None, reward_from_events(self, events)
     ))
