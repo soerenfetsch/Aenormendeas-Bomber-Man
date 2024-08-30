@@ -4,7 +4,7 @@ import pickle
 from typing import List
 
 import events as e
-from .callbacks import state_to_features, N_CLOSEST_COINS, Q_TABLE_FILE, ACTIONS
+from .callbacks import state_to_features, Q_TABLE_FILE, ACTIONS
 
 # This is only an example!
 Transition = namedtuple('Transition',
@@ -19,6 +19,16 @@ PLACEHOLDER_EVENT = "PLACEHOLDER"
 # Custom events
 MOVE_CLOSER_TO_COIN = "MOVE_CLOSER_TO_COIN"
 MOVE_AWAY_FROM_COIN = "MOVE_AWAY_FROM_COIN"
+MOVE_CLOSER_TO_CRATE = "MOVE_CLOSER_TO_CRATE"
+MOVE_AWAY_FROM_CRATE = "MOVE_AWAY_FROM_CRATE"
+DROPPED_BOMB_AT_CRATE = "DROPPED_BOMB_AT_CRATE"
+NOTHING_HAPPENED = "NOTHING_HAPPENED"
+OSCILLATING = 'OSCILLATING'
+INEFFECTIVE_BOMB = 'INEFFECTIVE_BOMB'
+MOVE_CLOSER_TO_EXPLOSION = 'MOVE_CLOSER_TO_EXPLOSION'
+MOVED = 'MOVED'
+
+oldold_position = (-999,-999)
 
 
 def setup_training(self):
@@ -33,20 +43,30 @@ def setup_training(self):
     self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
     # set up training parameters for exploration and learning
     # TODO: Maybe do epsilon decay starting with lots of exploration?
-    self.epsilon = 0.2
-    self.gamma = 0.9
-    self.alpha = 0.1
+    self.epsilon = 0.4
+    self.gamma = 0.99
+    self.alpha = 0.2
+    self.epsilon_decay = 0.999
+    self.min_epsilon = 0.15
 
-    # TODO: Add more rewards for upcoming tasks
     self.game_rewards = {
-        e.COIN_COLLECTED: 150.0,
-        e.KILLED_SELF: -50.0,
-        e.GOT_KILLED: -200.0,
+        e.COIN_COLLECTED: 1000.0,
+        e.KILLED_SELF: 0.0,
+        e.GOT_KILLED: -700.0,
         PLACEHOLDER_EVENT: 0.0,
-        e.INVALID_ACTION: -200.0,
-        MOVE_CLOSER_TO_COIN: 30.0,
-        MOVE_AWAY_FROM_COIN: -10.0,
-        e.WAITED: 0.0,
+        e.INVALID_ACTION: -500.0,
+        MOVE_CLOSER_TO_COIN: 80.0,
+        MOVE_AWAY_FROM_COIN: -120.0,
+        MOVE_CLOSER_TO_CRATE: 40.0,
+        MOVE_AWAY_FROM_CRATE: -60.0,
+        e.WAITED: -100.0,
+        e.CRATE_DESTROYED: 80.0,
+        DROPPED_BOMB_AT_CRATE: 800.0,
+        NOTHING_HAPPENED: -2,
+        OSCILLATING: -90.0,
+        INEFFECTIVE_BOMB: -100,
+        MOVE_CLOSER_TO_EXPLOSION: -50.0,
+        MOVED: -3.0
     }
 
 def update_q_values(self):
@@ -102,19 +122,58 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     :param events: The events that occurred when going from  `old_game_state` to `new_game_state`
     """
     self.logger.debug(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
-    old_features, old_coin_distances = state_to_features(self, old_game_state)
-    new_features, new_coin_distances = state_to_features(self, new_game_state)
+    old_features, old_objective_distances = state_to_features(self, old_game_state)
+    new_features, new_objective_distances = state_to_features(self, new_game_state)
 
+    old_coin_distances = old_objective_distances[0]
+    new_coin_distances = new_objective_distances[0]
+
+    old_crate_distances = old_objective_distances[1]
+    new_crate_distances = new_objective_distances[1]
+
+    global oldold_position
     # Custom events to hand out reward
     # event for moving closer to closest coin / farther away
     if e.COIN_COLLECTED not in events:
-        if new_coin_distances[0] < old_coin_distances[0]:
+        if new_coin_distances < old_coin_distances:
             events.append(MOVE_CLOSER_TO_COIN)
-        elif new_coin_distances[0] > old_coin_distances[0]:
+        elif new_coin_distances > old_coin_distances:
             events.append(MOVE_AWAY_FROM_COIN)
-
+    if e.COIN_COLLECTED not in events and e.BOMB_DROPPED not in events:
+        if new_crate_distances < old_crate_distances:
+            events.append(MOVE_CLOSER_TO_CRATE)
+        elif new_crate_distances > old_crate_distances:
+            events.append(MOVE_AWAY_FROM_CRATE)
+    if e.BOMB_DROPPED in events and any(old_features[:4] == 2):
+        events.append(DROPPED_BOMB_AT_CRATE)
+    if e.COIN_COLLECTED not in events and e.CRATE_DESTROYED and e.KILLED_OPPONENT not in events:
+        events.append(NOTHING_HAPPENED)
+    if oldold_position==new_game_state['self'][3]:
+        events.append(OSCILLATING)
+    if e.BOMB_EXPLODED in events and e.CRATE_DESTROYED not in events:
+        events.append(INEFFECTIVE_BOMB)
+    if e.MOVED_UP in events and old_features[6] == 1:
+        events.append(MOVE_CLOSER_TO_EXPLOSION)
+    if e.MOVED_DOWN in events and old_features[7] == 1:
+        events.append(MOVE_CLOSER_TO_EXPLOSION)
+    if e.MOVED_LEFT in events and old_features[8] == 1:
+        events.append(MOVE_CLOSER_TO_EXPLOSION)
+    if e.MOVED_RIGHT in events and old_features[9] == 1:
+        events.append(MOVE_CLOSER_TO_EXPLOSION)
+    if e.WAITED in events and old_features[10] == 1:
+        events.append(MOVE_CLOSER_TO_EXPLOSION)
+    if e.BOMB_DROPPED in events and old_features[11] == 1:
+        events.append(MOVE_CLOSER_TO_EXPLOSION)
+    # Any movement
+    if (e.MOVED_UP in events or e.MOVED_DOWN in events
+        or e.MOVED_LEFT in events or e.MOVED_RIGHT in events):
+        events.append(MOVED)
+    oldold_position = old_game_state['self'][3]
     # state_to_features is defined in callbacks.py
     self.transitions.append(Transition(old_features, self_action, new_features, reward_from_events(self, events)))
+
+    # Gradually decrease epsilon
+    self.epsilon = max(self.epsilon * self.epsilon_decay, self.min_epsilon)
 
 
 def end_of_round(self, last_game_state: dict, last_action: str, events: List[str]):
@@ -133,7 +192,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
     # TODO: Maybe end of game events?
     # Update the Q Values
-    last_features, _ = state_to_features(self, last_game_state)
+    last_features, _, = state_to_features(self, last_game_state)
     self.transitions.append(Transition(
         last_features, last_action, None, reward_from_events(self, events)
     ))
