@@ -14,7 +14,7 @@ ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 N_CLOSEST_COINS = 1  # number of closest coins to consider for features
 N_CLOSEST_CRATES = 1  # number of closest crates to consider for features
 
-Q_TABLE_FILE = "coins_crates_bombs_qtable.pkl"
+Q_TABLE_FILE = "coins_crates_bombs_players.pkl"
 TRAIN_NEW = False
 
 
@@ -130,7 +130,6 @@ def adjacent_tile_features(self, game_state, agent_position):
     :agent_position (np.array([x, y])): current coordinates of the agent
     :return: np.array(list)[4]: concatenated tile features UP, DOWN, LEFT, RIGHT
     """
-    self.logger.debug("Converting adjacent fields to features")
     y, x = agent_position
     height, width = game_state['field'].shape
     tile_features = []
@@ -167,7 +166,6 @@ def find_closest_objectives(self, game_state, agent_position):
     :return: np.array(list): concatenated tile features for all objectives
              np.array(list): concatenated list of actual distances to objectives
     """
-    self.logger.debug("Finding closest coin objectives.")
     y, x = agent_position
     # UP DOWN LEFT RIGHT
     neighbors = [(y-1, x), (y+1, x), (y, x-1), (y, x+1)]
@@ -187,7 +185,15 @@ def find_closest_objectives(self, game_state, agent_position):
     max_coins = min(N_CLOSEST_COINS, len(game_state['coins']))
     max_crates = min(N_CLOSEST_CRATES, np.count_nonzero(
         game_state['field'] == 1))
-    while not len(q) == 0 and (coins_picked < max_coins or crates_picked < max_crates):
+    
+    enemies_picked = 0
+    out_features_enemies = [-1 for _ in range(N_CLOSEST_CRATES)]
+    enemy_distances = [float('inf') for _ in range(N_CLOSEST_CRATES)]
+    max_enemies = min(N_CLOSEST_CRATES, len(game_state['others']))
+    
+    while not len(q) == 0 and (coins_picked < max_coins or 
+                               crates_picked < max_crates or
+                               enemies_picked < max_enemies):
         curr_dist, (dy, dx) = heapq.heappop(q)
         if curr_dist > distances[dx, dy]:
             continue
@@ -220,122 +226,20 @@ def find_closest_objectives(self, game_state, agent_position):
                 crate_distances[crates_picked] = curr_dist
                 crates_picked += 1
         directions = [(dy-1, dx), (dy+1, dx), (dy, dx-1), (dy, dx+1)]
-
-        for ddy, ddx in directions:
-            if not (0 <= ddx < width and 0 <= ddy < height):
-                continue
-            if game_state['field'][ddy, ddx] not in (0, 1):
-                continue
-            if curr_dist + 1 < distances[ddy, ddx]:
-                distances[ddy, ddx] = curr_dist + 1
-                parents[ddy, ddx] = (dy, dx)
-                heapq.heappush(q, (curr_dist+1, (ddy, ddx)))
-    return (np.concatenate([out_features_coins, out_features_crates]),
-            np.concatenate([coin_distances, crate_distances]))
-
-
-def adjacent_explosions(self, game_state, agent_position):
-    '''
-    if 2 explosions are planned for 1 adjacent block, 
-    will only consider the explosion that happens sooner.
-    value of feature says how long until explosion over, meaning 
-    if bomb not exploded yet
-    value is bomb timer + explosion timer
-
-    walls stop explosion
-    '''
-    self.logger.debug("Converting adjacent fields to features")
-    y, x = agent_position
-    height, width = game_state['explosion_map'].shape
-    explosion_features = []
-    # UP DOWN LEFT RIGHT HERE
-    look = [(y-1, x), (y+1, x), (y, x-1), (y, x+1), (y, x)]
-    future_explosions = []
-    # problem: explosion doesnt go through walls
-    for b in game_state['bombs']:
-        y, x, t = b[0][0], b[0][1], b[1]+s.EXPLOSION_TIMER
-        future_explosions.append(b)
-        for dy in range(1, s.BOMB_POWER):
-            if game_state['field'][y+dy][x] == -1:
-                break
-            else:
-                future_explosions.append([(y+dy, x), t])
-        for dy in range(1, s.BOMB_POWER):
-            if game_state['field'][y-dy][x] == -1:
-                break
-            else:
-                future_explosions.append([(y-dy, x), t])
-        for dx in range(1, s.BOMB_POWER):
-            if game_state['field'][y][x+dx] == -1:
-                break
-            else:
-                future_explosions.append([(y, x+dx), t])
-        for dx in range(1, s.BOMB_POWER):
-            if game_state['field'][y][x-dx] == -1:
-                break
-            else:
-                future_explosions.append([(y, x-dx), t])
-
-    for dy, dx in look:
-        if game_state['explosion_map'][dy][dx] != 0:
-            explosion_features.append(game_state['explosion_map'][dy][dx])
-        else:
-            # fehler
-            explosions_at_dxdy = []
-            for e in future_explosions:
-                if e[0] == (dy, dx):
-                    explosions_at_dxdy.append(e[1])
-            if len(explosions_at_dxdy) != 0:
-                explosion_features.append(min(explosions_at_dxdy))
-            else:
-                explosion_features.append(0)
-
-    assert len(explosion_features) == 5
-    return np.array(explosion_features)
-
-
-def escape(self, game_state, agent_position):
-
-    self.logger.debug("Finding closest escape route.")
-    y, x = agent_position
-    adv_explosion_map = get_adv_bomb_field(self, game_state)
-    # UP DOWN LEFT RIGHT
-    if adv_explosion_map[y, x] == 0:
-        return np.array([0]), 0
-    neighbors = [(y-1, x), (y+1, x), (y, x-1), (y, x+1)]
-    height, width = game_state['field'].shape
-    distances = np.ones(game_state['field'].shape) * float('inf')
-    distances[y, x] = 0
-    parents = np.zeros(game_state['field'].shape,
-                       dtype=np.dtype([('y', int), ('x', int)]))
-    parents[y, x] = (y, x)
-    q = [(0, (y, x))]
-    escapes_picked = 0
-    out_features_escapes = [-1 for _ in range(1)]
-    escape_distances = [float('inf') for _ in range(1)]
-    max_escapes = min(1, np.sum((game_state['field'] == 0) == (
-        adv_explosion_map == 0), axis=(0, 1)))
-    while not len(q) == 0 and (escapes_picked < max_escapes):
-        curr_dist, (dy, dx) = heapq.heappop(q)
-        if curr_dist > distances[dx, dy]:
-            continue
-        # If coin is found
-        if escapes_picked < max_escapes and adv_explosion_map[dy, dx] == 0:
+        # If enemy is found
+        if enemies_picked < max_enemies and (dy, dx) in [e[3] for e in game_state['others']]:
             if (dy, dx) == (y, x):
-                out_features_escapes[escapes_picked] = -1
-                escape_distances[escapes_picked] = curr_dist
-                escapes_picked += 1
+                out_features_enemies[enemies_picked] = -1
+                enemy_distances[enemies_picked] = curr_dist
+                enemies_picked += 1
             else:
                 ddy, ddx = dy, dx
                 while (ddy, ddx) not in neighbors:
                     ddy, ddx = parents[ddy, ddx]
                 index = neighbors.index((ddy, ddx))
-                out_features_escapes[escapes_picked] = index
-                escape_distances[escapes_picked] = curr_dist
-                escapes_picked += 1
-
-        directions = [(dy-1, dx), (dy+1, dx), (dy, dx-1), (dy, dx+1)]
-
+                out_features_enemies[enemies_picked] = index
+                enemy_distances[enemies_picked] = curr_dist
+                enemies_picked += 1
         for ddy, ddx in directions:
             if not (0 <= ddx < width and 0 <= ddy < height):
                 continue
@@ -345,11 +249,10 @@ def escape(self, game_state, agent_position):
                 distances[ddy, ddx] = curr_dist + 1
                 parents[ddy, ddx] = (dy, dx)
                 heapq.heappush(q, (curr_dist+1, (ddy, ddx)))
-    return np.array(out_features_escapes), escape_distances
-
+    return (np.concatenate([out_features_coins, out_features_crates, out_features_enemies]),
+            np.concatenate([coin_distances, crate_distances, enemy_distances]))
 
 def number_of_crates_in_rad(self, game_state, agent_position):
-    self.logger.debug("Finding number of crates in bomb range.")
     y, x = agent_position
     height, width = game_state['explosion_map'].shape
     crate_count = game_state['field'][y][x]
@@ -397,7 +300,6 @@ def deadly_adjacent_fields(self, game_state, agent_position, adv_bomb_field):
     :param adv_bomb_field (np.array): bomb field with bomb and time info of explosions
     :return deadly (np.array): length 5, UP DOWN LEFT RIGHT HERE, 1 for deadly, 0 not
     """
-    self.logger.debug("Finding deadly adjacent fields.")
     y, x = agent_position
     # UP DOWN LEFT RIGHT HERE
     neighbors = get_neighbors((y, x), game_state, adv_bomb_field, 0)
@@ -460,6 +362,41 @@ def is_bombing_deadly(self, game_state, agent_position, adv_bomb_field):
         self, new_game_state, agent_position, new_adv_bomb_field)
     return np.array([deadly_features[4]])
 
+def is_enemy_in_range(self, game_state, agent_position):
+    """
+    Checks if any enemy is in bombing range. 
+
+    :param game_state:  A dictionary describing the current game board
+    :param agent_position (np.array([x, y])): current coordinates of the agent
+    :return 1 if enemy is in range, 0 if not
+    """
+    y, x = agent_position
+    if len(game_state['others'])==0:
+        return np.array([0])
+    enemies = [e[3] for e in game_state['others']]
+    height, width = game_state['field'].shape
+    for dy in range(1, s.BOMB_POWER+1):
+        if y+dy >= height or game_state['field'][y+dy][x] == -1:
+            break
+        if (y+dy,x) in enemies :
+            return np.array([1])
+    for dy in range(1, s.BOMB_POWER+1):
+        if y-dy < 0 or game_state['field'][y-dy][x] == -1:
+            break
+        if (y-dy,x) in enemies :
+            return np.array([1])
+    for dx in range(1, s.BOMB_POWER+1):
+        if x+dx >= width or game_state['field'][y][x+dx] == -1:
+            break
+        if (y, x+dx) in enemies :
+            return np.array([1])
+    for dx in range(1, s.BOMB_POWER+1):
+        if x-dx < 0 or game_state['field'][y][x-dx] == -1:
+            break
+        if (y, x-dx) in enemies :
+            return np.array([1])
+    return np.array([0])
+
 def state_to_features(self, game_state: dict) -> np.array:
     """
     Converts the game state to the input of your model, i.e.
@@ -488,7 +425,8 @@ def state_to_features(self, game_state: dict) -> np.array:
                            objective_features,
                            deadly_adjacent_features,
                            can_bomb,
-                           number_of_crates_in_rad(self, game_state, agent_position)]),
+                           number_of_crates_in_rad(self, game_state, agent_position),
+                           is_enemy_in_range(self, game_state, agent_position)]),
             objective_distances)
 
 
@@ -516,16 +454,17 @@ if __name__ == "__main__":
                                    [0, 0, 1, 1, 0, 0],
                                    [0, 0, 0, 0, 0, 0],
                                    [0, 1, 0, 0, 0, 0],
-                                   [0, 0, 0, 0, 0, 0]])
+                                   [0, 0, 0, 0, 0, 0]]),
+        'others': []
     }
     features, objective_distances = state_to_features(
         object(), game_state)
     print(features)
     print(objective_distances)
     assert (len(features) == len(
-        np.array([1, 1, 3, 3, 3, 3, 1, 1, 0, 1, 0, 0, 0])))
+        np.array([1, 1, 3, 3, 3, 3, -1, 1, 1, 1, 0, 0, 0, 0, 0])))
     assert (features == np.array(
-        [1, 1, 3, 3, 3, 3, 1, 1, 0, 1, 0, 0, 0])).all()
+        [1, 1, 3, 3, 3, 3, -1, 1, 1, 1, 0, 0, 0, 0, 0])).all()
 
     # Test the advanced bomb map
     adv_bomb_map = get_adv_bomb_field(object(), game_state)
@@ -556,7 +495,9 @@ if __name__ == "__main__":
                                    [0, 0, 0, 2, 0, 0],
                                    [0, 0, 0, 0, 0, 0],
                                    [0, 0, 0, 0, 0, 0],
-                                   [0, 0, 0, 0, 0, 0]])
+                                   [0, 0, 0, 0, 0, 0]]),
+        'others': [('enemyA', 100, 0, (1, 1)),
+                   ('enemyB', 50, 1, (3, 1))]
     }
     deadly = deadly_adjacent_fields(object(), game_state_0, (3, 3),
                                     get_adv_bomb_field(object(), game_state_0))
@@ -566,3 +507,9 @@ if __name__ == "__main__":
                                     get_adv_bomb_field(object(), game_state_0))
     print(deadly_bombing)
     assert (deadly_bombing == np.array([0])).all()
+    enemy_in_range = is_enemy_in_range(object(), game_state_0, (3, 3))
+    assert enemy_in_range == np.array([1])
+    feature_enemy, enemy_distance = [e[2] for e in find_closest_objectives(object(), game_state_0, (3, 3))]
+    print(feature_enemy, enemy_distance)
+    assert feature_enemy == 2
+    assert enemy_distance == 2
