@@ -25,28 +25,50 @@ if __name__ == "__main__":
 
     for key, val in q_table.items():
         key = list(key)
-        new_key_00 = key[:6] + [-1] + key[6:] + [0]
-        new_key_10 = key[:6] + [0] + key[6:] + [0]
-        new_key_20 = key[:6] + [1] + key[6:] + [0]
-        new_key_30 = key[:6] + [2] + key[6:] + [0]
-        new_key_40 = key[:6] + [3] + key[6:] + [0]
+        new_key_000 = key[:6] + [-1] + key[6:] + [0] + [0]
+        new_key_100 = key[:6] + [0] + key[6:] + [0] + [0]
+        new_key_200 = key[:6] + [1] + key[6:] + [0] + [0]
+        new_key_300 = key[:6] + [2] + key[6:] + [0] + [0]
+        new_key_400 = key[:6] + [3] + key[6:] + [0] + [0]
 
-        new_key_01 = key[:6] + [-1] + key[6:] + [1]
-        new_key_11 = key[:6] + [0] + key[6:] + [1]
-        new_key_21 = key[:6] + [1] + key[6:] + [1]
-        new_key_31 = key[:6] + [2] + key[6:] + [1]
-        new_key_41 = key[:6] + [3] + key[6:] + [1]
+        new_key_010 = key[:6] + [-1] + key[6:] + [1] + [0]
+        new_key_110 = key[:6] + [0] + key[6:] + [1] + [0]
+        new_key_210 = key[:6] + [1] + key[6:] + [1] + [0]
+        new_key_310 = key[:6] + [2] + key[6:] + [1] + [0]
+        new_key_410 = key[:6] + [3] + key[6:] + [1] + [0]
 
-        new_keys = (new_key_00,
-                    new_key_10,
-                    new_key_20,
-                    new_key_30,
-                    new_key_40,
-                    new_key_01,
-                    new_key_11,
-                    new_key_21,
-                    new_key_31,
-                    new_key_41)
+        new_key_001 = key[:6] + [-1] + key[6:] + [0] + [1]
+        new_key_101 = key[:6] + [0] + key[6:] + [0] + [1]
+        new_key_201 = key[:6] + [1] + key[6:] + [0] + [1]
+        new_key_301 = key[:6] + [2] + key[6:] + [0] + [1]
+        new_key_401 = key[:6] + [3] + key[6:] + [0] + [1]
+
+        new_key_011 = key[:6] + [-1] + key[6:] + [1] + [1]
+        new_key_111 = key[:6] + [0] + key[6:] + [1] + [1]
+        new_key_211 = key[:6] + [1] + key[6:] + [1] + [1]
+        new_key_311 = key[:6] + [2] + key[6:] + [1] + [1]
+        new_key_411 = key[:6] + [3] + key[6:] + [1] + [1]
+
+        new_keys = (new_key_000,
+                    new_key_001,
+                    new_key_100,
+                    new_key_101,
+                    new_key_200,
+                    new_key_201,
+                    new_key_300,
+                    new_key_301,
+                    new_key_400,
+                    new_key_401,
+                    new_key_010,
+                    new_key_011,
+                    new_key_110,
+                    new_key_111,
+                    new_key_210,
+                    new_key_211,
+                    new_key_310,
+                    new_key_311,
+                    new_key_410,
+                    new_key_411)
         
         for new_key in new_keys:
             new_key = tuple(new_key)

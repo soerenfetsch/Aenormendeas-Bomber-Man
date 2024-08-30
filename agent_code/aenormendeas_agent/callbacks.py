@@ -397,6 +397,18 @@ def is_enemy_in_range(self, game_state, agent_position):
             return np.array([1])
     return np.array([0])
 
+def can_place_bomb(self, game_state):
+    """
+    Checks if agent can bomb
+
+    :param game_state:  A dictionary describing the current game board
+    :return [1] if agent can bomb, [0] if not
+    """
+    if game_state['self'][2]:
+        return [1]
+    else:
+        return [0]
+
 def state_to_features(self, game_state: dict) -> np.array:
     """
     Converts the game state to the input of your model, i.e.
@@ -426,7 +438,8 @@ def state_to_features(self, game_state: dict) -> np.array:
                            deadly_adjacent_features,
                            can_bomb,
                            number_of_crates_in_rad(self, game_state, agent_position),
-                           is_enemy_in_range(self, game_state, agent_position)]),
+                           is_enemy_in_range(self, game_state, agent_position),
+                           can_place_bomb(self, game_state)]),
             objective_distances)
 
 
@@ -462,9 +475,9 @@ if __name__ == "__main__":
     print(features)
     print(objective_distances)
     assert (len(features) == len(
-        np.array([1, 1, 3, 3, 3, 3, -1, 1, 1, 1, 0, 0, 0, 0, 0])))
+        np.array([1, 1, 3, 3, 3, 3, -1, 1, 1, 1, 0, 0, 0, 0, 0, 1])))
     assert (features == np.array(
-        [1, 1, 3, 3, 3, 3, -1, 1, 1, 1, 0, 0, 0, 0, 0])).all()
+        [1, 1, 3, 3, 3, 3, -1, 1, 1, 1, 0, 0, 0, 0, 0, 1])).all()
 
     # Test the advanced bomb map
     adv_bomb_map = get_adv_bomb_field(object(), game_state)
