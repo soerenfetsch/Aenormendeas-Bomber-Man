@@ -22,6 +22,7 @@ MOVE_AWAY_FROM_COIN = "MOVE_AWAY_FROM_COIN"
 MOVE_CLOSER_TO_CRATE = "MOVE_CLOSER_TO_CRATE"
 MOVE_AWAY_FROM_CRATE = "MOVE_AWAY_FROM_CRATE"
 DROPPED_BOMB_AT_CRATE = "DROPPED_BOMB_AT_CRATE"
+DROPPED_BOMB_AT_OPPONENT = "DROPPED_BOMB_AT_OPPONENT"
 NOTHING_HAPPENED = "NOTHING_HAPPENED"
 OSCILLATING = 'OSCILLATING'
 INEFFECTIVE_BOMB = 'INEFFECTIVE_BOMB'
@@ -51,7 +52,7 @@ def setup_training(self):
 
     self.game_rewards = {
         e.COIN_COLLECTED: 1000.0,
-        e.KILLED_SELF: 0.0,
+        e.KILLED_SELF: -30.0,
         e.GOT_KILLED: -700.0,
         PLACEHOLDER_EVENT: 0.0,
         e.INVALID_ACTION: -500.0,
@@ -62,11 +63,13 @@ def setup_training(self):
         e.WAITED: -100.0,
         e.CRATE_DESTROYED: 80.0,
         DROPPED_BOMB_AT_CRATE: 800.0,
+        DROPPED_BOMB_AT_OPPONENT: 800.0,
         NOTHING_HAPPENED: -2,
         OSCILLATING: -90.0,
         INEFFECTIVE_BOMB: -100,
-        MOVE_CLOSER_TO_EXPLOSION: -50.0,
-        MOVED: -3.0
+        MOVE_CLOSER_TO_EXPLOSION: -500.0,
+        MOVED: -3.0,
+        e.KILLED_OPPONENT: 2000.0
     }
 
 def update_q_values(self):
@@ -146,23 +149,26 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
             events.append(MOVE_AWAY_FROM_CRATE)
     if e.BOMB_DROPPED in events and any(old_features[:4] == 2):
         events.append(DROPPED_BOMB_AT_CRATE)
+    if e.BOMB_DROPPED in events and old_features[14] == 1:
+        events.append(DROPPED_BOMB_AT_OPPONENT)
     if e.COIN_COLLECTED not in events and e.CRATE_DESTROYED and e.KILLED_OPPONENT not in events:
         events.append(NOTHING_HAPPENED)
     if oldold_position==new_game_state['self'][3]:
         events.append(OSCILLATING)
-    if e.BOMB_EXPLODED in events and e.CRATE_DESTROYED not in events:
+    if e.BOMB_EXPLODED in events and (e.CRATE_DESTROYED not in events or 
+                                      e.KILLED_OPPONENT not in events):
         events.append(INEFFECTIVE_BOMB)
-    if e.MOVED_UP in events and old_features[6] == 1:
+    if e.MOVED_UP in events and old_features[7] == 1:
         events.append(MOVE_CLOSER_TO_EXPLOSION)
-    if e.MOVED_DOWN in events and old_features[7] == 1:
+    if e.MOVED_DOWN in events and old_features[8] == 1:
         events.append(MOVE_CLOSER_TO_EXPLOSION)
-    if e.MOVED_LEFT in events and old_features[8] == 1:
+    if e.MOVED_LEFT in events and old_features[9] == 1:
         events.append(MOVE_CLOSER_TO_EXPLOSION)
-    if e.MOVED_RIGHT in events and old_features[9] == 1:
+    if e.MOVED_RIGHT in events and old_features[10] == 1:
         events.append(MOVE_CLOSER_TO_EXPLOSION)
-    if e.WAITED in events and old_features[10] == 1:
+    if e.WAITED in events and old_features[11] == 1:
         events.append(MOVE_CLOSER_TO_EXPLOSION)
-    if e.BOMB_DROPPED in events and old_features[11] == 1:
+    if e.BOMB_DROPPED in events and old_features[12] == 1:
         events.append(MOVE_CLOSER_TO_EXPLOSION)
     # Any movement
     if (e.MOVED_UP in events or e.MOVED_DOWN in events
