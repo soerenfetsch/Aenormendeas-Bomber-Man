@@ -24,12 +24,9 @@ MOVE_AWAY_FROM_CRATE = "MOVE_AWAY_FROM_CRATE"
 DROPPED_BOMB_AT_CRATE = "DROPPED_BOMB_AT_CRATE"
 DROPPED_BOMB_AT_OPPONENT = "DROPPED_BOMB_AT_OPPONENT"
 NOTHING_HAPPENED = "NOTHING_HAPPENED"
-OSCILLATING = 'OSCILLATING'
 INEFFECTIVE_BOMB = 'INEFFECTIVE_BOMB'
 MOVE_CLOSER_TO_EXPLOSION = 'MOVE_CLOSER_TO_EXPLOSION'
 MOVED = 'MOVED'
-
-oldold_position = (-999,-999)
 
 
 def setup_training(self):
@@ -51,8 +48,8 @@ def setup_training(self):
     self.min_epsilon = 0.15
 
     self.game_rewards = {
-        e.COIN_COLLECTED: 1000.0,
-        e.KILLED_SELF: -30.0,
+        e.COIN_COLLECTED: 600.0,
+        e.KILLED_SELF: -1000.0,
         e.GOT_KILLED: -700.0,
         PLACEHOLDER_EVENT: 0.0,
         e.INVALID_ACTION: -500.0,
@@ -64,11 +61,10 @@ def setup_training(self):
         e.CRATE_DESTROYED: 80.0,
         DROPPED_BOMB_AT_CRATE: 800.0,
         DROPPED_BOMB_AT_OPPONENT: 800.0,
-        NOTHING_HAPPENED: -2,
-        OSCILLATING: -90.0,
+        NOTHING_HAPPENED: -2.0,
         INEFFECTIVE_BOMB: -100,
-        MOVE_CLOSER_TO_EXPLOSION: -500.0,
-        MOVED: -3.0,
+        MOVE_CLOSER_TO_EXPLOSION: -1000.0,
+        MOVED: -2.0,
         e.KILLED_OPPONENT: 2000.0
     }
 
@@ -147,24 +143,22 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
             events.append(MOVE_CLOSER_TO_CRATE)
         elif new_crate_distances > old_crate_distances:
             events.append(MOVE_AWAY_FROM_CRATE)
-    if e.BOMB_DROPPED in events and any(old_features[:4] == 2):
+    if e.BOMB_DROPPED in events and old_features[13] > 0:
         events.append(DROPPED_BOMB_AT_CRATE)
     if e.BOMB_DROPPED in events and old_features[14] == 1:
         events.append(DROPPED_BOMB_AT_OPPONENT)
     if e.COIN_COLLECTED not in events and e.CRATE_DESTROYED and e.KILLED_OPPONENT not in events:
         events.append(NOTHING_HAPPENED)
-    if oldold_position==new_game_state['self'][3]:
-        events.append(OSCILLATING)
     if e.BOMB_EXPLODED in events and (e.CRATE_DESTROYED not in events or 
                                       e.KILLED_OPPONENT not in events):
         events.append(INEFFECTIVE_BOMB)
-    if e.MOVED_UP in events and old_features[7] == 1:
+    if e.MOVED_LEFT in events and old_features[7] == 1:
         events.append(MOVE_CLOSER_TO_EXPLOSION)
-    if e.MOVED_DOWN in events and old_features[8] == 1:
+    if e.MOVED_RIGHT in events and old_features[8] == 1:
         events.append(MOVE_CLOSER_TO_EXPLOSION)
-    if e.MOVED_LEFT in events and old_features[9] == 1:
+    if e.MOVED_UP in events and old_features[9] == 1:
         events.append(MOVE_CLOSER_TO_EXPLOSION)
-    if e.MOVED_RIGHT in events and old_features[10] == 1:
+    if e.MOVED_DOWN in events and old_features[10] == 1:
         events.append(MOVE_CLOSER_TO_EXPLOSION)
     if e.WAITED in events and old_features[11] == 1:
         events.append(MOVE_CLOSER_TO_EXPLOSION)
@@ -175,6 +169,7 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
         or e.MOVED_LEFT in events or e.MOVED_RIGHT in events):
         events.append(MOVED)
     oldold_position = old_game_state['self'][3]
+    # print(f'Encountered game event(s) {", ".join(map(repr, events))} in step {new_game_state["step"]}')
     # state_to_features is defined in callbacks.py
     self.transitions.append(Transition(old_features, self_action, new_features, reward_from_events(self, events)))
 
@@ -196,6 +191,7 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     :param self: The same object that is passed to all of your callbacks.
     """
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
+    # print(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
     # TODO: Maybe end of game events?
     # Update the Q Values
     last_features, _, = state_to_features(self, last_game_state)
@@ -219,4 +215,5 @@ def reward_from_events(self, events: List[str]) -> int:
         if event in self.game_rewards:
             reward_sum += self.game_rewards[event]
     self.logger.info(f"Awarded {reward_sum} for events {', '.join(events)}")
+    # print(f"Awarded {reward_sum} for events {', '.join(events)}")
     return reward_sum

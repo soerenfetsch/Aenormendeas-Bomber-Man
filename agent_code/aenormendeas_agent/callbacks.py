@@ -185,6 +185,7 @@ def find_closest_objectives(self, game_state, agent_position):
     max_coins = min(N_CLOSEST_COINS, len(game_state['coins']))
     max_crates = min(N_CLOSEST_CRATES, np.count_nonzero(
         game_state['field'] == 1))
+    adv_bomb_map = get_adv_bomb_field(self, game_state)
     
     enemies_picked = 0
     out_features_enemies = [-1 for _ in range(N_CLOSEST_CRATES)]
@@ -212,7 +213,9 @@ def find_closest_objectives(self, game_state, agent_position):
                 coin_distances[coins_picked] = curr_dist
                 coins_picked += 1
         # If crate is found
-        if crates_picked < max_crates and game_state['field'][dy, dx] == 1:
+        if (crates_picked < max_crates and 
+            game_state['field'][dy, dx] == 1 and 
+            adv_bomb_map[dy, dx] <= 0):
             if (dy, dx) == (y, x):
                 out_features_crates[crates_picked] = -1
                 crate_distances[crates_picked] = curr_dist
