@@ -14,7 +14,7 @@ ACTIONS = ['UP', 'RIGHT', 'DOWN', 'LEFT', 'WAIT', 'BOMB']
 N_CLOSEST_COINS = 1  # number of closest coins to consider for features
 N_CLOSEST_CRATES = 1  # number of closest crates to consider for features
 
-Q_TABLE_FILE = "coins_crates_bombs_players.pkl"
+Q_TABLE_FILE = "minimal_aenormendeas.pkl"
 TRAIN_NEW = False
 
 
@@ -119,14 +119,15 @@ def get_adv_bomb_field(self, game_state):
 
     return original_field
 
-def adjacent_tile_features(self, game_state, agent_position):
-    """ 
+def adjacent_walkable_tiles(self, game_state, agent_position):
+    """
     Convert the agent's position and the game state to features for the 4 adjacent
-    tiles UP, DOWN, LEFT, RIGHT. We encode each tile:
-    0: outside bound, 1: stone wall, 2: crate, 3: free tile
+    tiles UP, DOWN, LEFT, RIGHT (matrix style not gui, in gui it is LEFT, RIGHT, UP, DOWN).
+    We encode each tile:
+    0: not walkable (stone wall or crate), 1: walkable (free tile)
 
     :param: game_state (dict): The dictionary that describes everything on the board.
-    :agent_position (np.array([x, y])): current coordinates of the agent
+    :param: agent_position (np.array([x, y])): current coordinates of the agent
     :return: np.array(list)[4]: concatenated tile features UP, DOWN, LEFT, RIGHT
     """
     y, x = agent_position
@@ -140,13 +141,13 @@ def adjacent_tile_features(self, game_state, agent_position):
             tile_features.append(0)
         # Stone wall
         elif game_state['field'][dy, dx] == -1:
-            tile_features.append(1)
+            tile_features.append(0)
         # Crate
         elif game_state['field'][dy, dx] == 1:
-            tile_features.append(2)
+            tile_features.append(0)
         # Free tile
         elif game_state['field'][dy, dx] == 0:
-            tile_features.append(3)
+            tile_features.append(1)
 
     assert len(tile_features) == 4
     return np.array(tile_features)
@@ -160,10 +161,11 @@ def find_closest_objectives(self, game_state, agent_position):
     well as the respective distance as a feature for each objective.
     WAIT: -1, UP: 0, DOWN: 1, LEFT: 2, RIGHT: 3. The distance is only
     saved up to the MAX_SAVE_DIST to lower the number of states.
-    :params: game_state (dict): The dictionary that describes everything on the board.
-    :agent_position (np.array([x, y])): current coordinates of the agent
-    :return: np.array(list): concatenated tile features for all objectives
-             np.array(list): concatenated list of actual distances to objectives
+
+    :param game_state (dict): The dictionary that describes everything on the board.
+    :param agent_position (np.array): current coordinates of the agent
+    :return np.array(list): concatenated tile features for all objectives
+    :return np.array(list): concatenated list of actual distances to objectives
     """
     y, x = agent_position
     # UP DOWN LEFT RIGHT
@@ -254,7 +256,14 @@ def find_closest_objectives(self, game_state, agent_position):
     return (np.concatenate([out_features_coins, out_features_crates, out_features_enemies]),
             np.concatenate([coin_distances, crate_distances, enemy_distances]))
 
-def number_of_crates_in_rad(self, game_state, agent_position):
+def is_crate_in_range(self, game_state, agent_position):
+    """
+    Feature to note if a crate is in bombing range.
+    
+    :param game_state (dict): The dictionary that describes everything on the board.
+    :param agent_position (np.array): current coordinates of the agent
+    :return np.array(int): [1] if crate in range, [0] if not
+    """
     y, x = agent_position
     height, width = game_state['explosion_map'].shape
     crate_count = game_state['field'][y][x]
@@ -262,23 +271,23 @@ def number_of_crates_in_rad(self, game_state, agent_position):
         if y+dy >= height or game_state['field'][y+dy][x] == -1:
             break
         if game_state['field'][y+dy][x] == 1:
-            crate_count += 1
+            return np.array([1])
     for dy in range(1, s.BOMB_POWER+1):
         if y-dy < 0 or game_state['field'][y-dy][x] == -1:
             break
         if game_state['field'][y-dy][x] == 1:
-            crate_count += 1
+            return np.array([1])
     for dx in range(1, s.BOMB_POWER+1):
         if x+dx >= width or game_state['field'][y][x+dx] == -1:
             break
         if game_state['field'][y][x+dx] == 1:
-            crate_count += 1
+            return np.array([1])
     for dx in range(1, s.BOMB_POWER+1):
         if x-dx < 0 or game_state['field'][y][x-dx] == -1:
             break
         if game_state['field'][y][x-dx] == 1:
-            crate_count += 1
-    return np.array([crate_count])
+            return np.array([1])
+    return np.array([0])
 
 def get_neighbors(pos, game_state, advanced_bomb_field, dist):
     # removes 1 tick from explosion time since you need 1 tick to reach the neighbor
@@ -435,11 +444,11 @@ def state_to_features(self, game_state: dict) -> np.array:
         self, game_state, agent_position, get_adv_bomb_field(self, game_state))
     can_bomb = is_bombing_deadly(
         self, game_state, agent_position, get_adv_bomb_field(self, game_state))
-    return (np.concatenate([adjacent_tile_features(self, game_state, agent_position),
+    return (np.concatenate([adjacent_walkable_tiles(self, game_state, agent_position),
                            objective_features,
                            deadly_adjacent_features,
                            can_bomb,
-                           number_of_crates_in_rad(self, game_state, agent_position),
+                           is_crate_in_range(self, game_state, agent_position),
                            is_enemy_in_range(self, game_state, agent_position),
                            can_place_bomb(self, game_state)]),
             objective_distances)
@@ -477,9 +486,9 @@ if __name__ == "__main__":
     print(features)
     print(objective_distances)
     assert (len(features) == len(
-        np.array([1, 1, 3, 3, 3, 3, -1, 1, 1, 1, 0, 0, 0, 0, 0, 1])))
+        np.array([0, 0, 1, 1, 3, -1, -1, 1, 1, 1, 0, 0, 0, 0, 0, 1])))
     assert (features == np.array(
-        [1, 1, 3, 3, 3, 3, -1, 1, 1, 1, 0, 0, 0, 0, 0, 1])).all()
+        [0, 0, 1, 1, 3, -1, -1, 1, 1, 1, 0, 0, 0, 0, 0, 1])).all()
 
     # Test the advanced bomb map
     adv_bomb_map = get_adv_bomb_field(object(), game_state)

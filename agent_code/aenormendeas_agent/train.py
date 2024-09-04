@@ -9,6 +9,9 @@ from .callbacks import state_to_features, Q_TABLE_FILE, ACTIONS
 # This is only an example!
 Transition = namedtuple('Transition',
                         ('state', 'action', 'next_state', 'reward'))
+Scores = []
+
+SCORE_FILE = "crate_coin_collection_scores.pkl"
 
 # Hyper parameters -- DO modify
 TRANSITION_HISTORY_SIZE = 1000  # keep only ... last transitions
@@ -179,6 +182,17 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     # Gradually decrease epsilon
     self.epsilon = max(self.epsilon * self.epsilon_decay, self.min_epsilon)
 
+def save_game_score(last_game_state):
+    """
+    Save the score of the agent at the end of a game to a file
+    
+    :param last_game_state (dict): last game state occured
+    """
+    score = last_game_state['self'][1]
+    Scores.append(score)
+
+    with open(SCORE_FILE, 'wb') as file:
+        pickle.dump(Scores, file)
 
 def end_of_round(self, last_game_state: dict, last_action: str, events: List[str]):
     """
@@ -195,7 +209,10 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     """
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
     # print(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
-    # TODO: Maybe end of game events?
+
+    # Keep track of the number of coins collected
+    save_game_score(last_game_state)
+
     # Update the Q Values
     last_features, _, = state_to_features(self, last_game_state)
     self.transitions.append(Transition(
