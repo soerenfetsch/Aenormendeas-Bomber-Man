@@ -62,8 +62,7 @@ def act(self, game_state: dict) -> str:
     if game_state is None or (self.train and np.random.rand() < self.epsilon):
         self.logger.debug(
             "Epsilon Exploration: Choosing action purely at random.")
-        # 80%: walk in any direction. 10% wait. 10% bomb.
-        return np.random.choice(ACTIONS, p=[.2, .2, .2, .2, .1, .1])
+        return np.random.choice(ACTIONS, p=[1/6, 1/6, 1/6, 1/6, 1/6, 1/6])
     self.logger.debug("Exploitation: Selecting best action using Q-Value.")
     features, _, = state_to_features(self, game_state)
     q_values: dict = self.q_table.get(tuple(features),

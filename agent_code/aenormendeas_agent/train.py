@@ -41,29 +41,29 @@ def setup_training(self):
     self.transitions = deque(maxlen=TRANSITION_HISTORY_SIZE)
     # set up training parameters for exploration and learning
     # TODO: Maybe do epsilon decay starting with lots of exploration?
-    self.epsilon = 0.4
-    self.gamma = 0.99
+    self.epsilon = 0.6
+    self.gamma = 0.5
     self.alpha = 0.2
     self.epsilon_decay = 0.999
     self.min_epsilon = 0.15
 
     self.game_rewards = {
-        e.COIN_COLLECTED: 600.0,
+        e.COIN_COLLECTED: 800.0,
         e.KILLED_SELF: -1000.0,
-        e.GOT_KILLED: -700.0,
+        e.GOT_KILLED: -3000.0,
         PLACEHOLDER_EVENT: 0.0,
-        e.INVALID_ACTION: -500.0,
-        MOVE_CLOSER_TO_COIN: 80.0,
+        e.INVALID_ACTION: -1000.0,
+        MOVE_CLOSER_TO_COIN: 90.0,
         MOVE_AWAY_FROM_COIN: -120.0,
-        MOVE_CLOSER_TO_CRATE: 40.0,
-        MOVE_AWAY_FROM_CRATE: -60.0,
+        MOVE_CLOSER_TO_CRATE: 80.0,
+        MOVE_AWAY_FROM_CRATE: -90.0,
         e.WAITED: -100.0,
         e.CRATE_DESTROYED: 80.0,
         DROPPED_BOMB_AT_CRATE: 800.0,
         DROPPED_BOMB_AT_OPPONENT: 800.0,
         NOTHING_HAPPENED: -2.0,
         INEFFECTIVE_BOMB: -100,
-        MOVE_CLOSER_TO_EXPLOSION: -1000.0,
+        MOVE_CLOSER_TO_EXPLOSION: -3000.0,
         MOVED: -2.0,
         e.KILLED_OPPONENT: 2000.0
     }
@@ -98,6 +98,9 @@ def update_q_values(self):
         if tuple(state) not in self.q_table:
             self.q_table[tuple(state)] = {}
         self.q_table[tuple(state)][action] = new_q_value
+        # print('UPDATING Q-VALUES OF ACTION', action)
+        # print('OLD Q-VALUE =', q_value)
+        # print('NEW Q-VALUE =', new_q_value)
 
     # Save the Q-Table as pkl file
     with open(Q_TABLE_FILE, "wb") as file:
@@ -149,7 +152,7 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
         events.append(DROPPED_BOMB_AT_OPPONENT)
     if e.COIN_COLLECTED not in events and e.CRATE_DESTROYED and e.KILLED_OPPONENT not in events:
         events.append(NOTHING_HAPPENED)
-    if e.BOMB_EXPLODED in events and (e.CRATE_DESTROYED not in events or 
+    if e.BOMB_EXPLODED in events and (e.CRATE_DESTROYED not in events and 
                                       e.KILLED_OPPONENT not in events):
         events.append(INEFFECTIVE_BOMB)
     if e.MOVED_LEFT in events and old_features[7] == 1:
