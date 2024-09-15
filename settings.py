@@ -31,12 +31,16 @@ SCENARIOS = {
     "less-dense": {
         "CRATE_DENSITY": 0.50,
         "COIN_COUNT": 25
+    },
+    "even-less-dense": {
+        "CRATE_DENSITY": 0.20,
+        "COIN_COUNT": 9
     }
 }
 MAX_AGENTS = 4
 
 # Round properties
-MAX_STEPS = 400
+MAX_STEPS = 400-250
 
 # GUI properties
 GRID_SIZE = 30

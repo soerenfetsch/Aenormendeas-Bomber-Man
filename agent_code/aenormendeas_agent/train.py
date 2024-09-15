@@ -48,8 +48,8 @@ def setup_training(self):
     self.min_epsilon = 0.15
 
     self.game_rewards = {
-        e.COIN_COLLECTED: 800.0,
-        e.KILLED_SELF: -1000.0,
+        e.COIN_COLLECTED: 1200.0,
+        e.KILLED_SELF: -3000.0,
         e.GOT_KILLED: -3000.0,
         PLACEHOLDER_EVENT: 0.0,
         e.INVALID_ACTION: -1000.0,
@@ -59,8 +59,8 @@ def setup_training(self):
         MOVE_AWAY_FROM_CRATE: -90.0,
         e.WAITED: -100.0,
         e.CRATE_DESTROYED: 80.0,
-        DROPPED_BOMB_AT_CRATE: 800.0,
-        DROPPED_BOMB_AT_OPPONENT: 800.0,
+        DROPPED_BOMB_AT_CRATE: 700.0,
+        DROPPED_BOMB_AT_OPPONENT: 700.0,
         NOTHING_HAPPENED: -2.0,
         INEFFECTIVE_BOMB: -100,
         MOVE_CLOSER_TO_EXPLOSION: -3000.0,
