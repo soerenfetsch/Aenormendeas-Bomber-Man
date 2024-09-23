@@ -9,6 +9,13 @@ from .callbacks import state_to_features, Q_TABLE_FILE, ACTIONS
 # This is only an example!
 Transition = namedtuple('Transition',
                         ('state', 'action', 'next_state', 'reward'))
+Scores = []
+Wins = []
+Other_Scores = []
+
+SCORE_FILE = "classic_versus_collector_small_scores2.pkl"
+WINS_FILE = "classic_versus_collector_small_wins2.pkl"
+OTHERS_SCORE_FILE = "classic_collector_small_scores2.pkl"
 
 # Hyper parameters -- DO modify
 TRANSITION_HISTORY_SIZE = 1000  # keep only ... last transitions
@@ -49,22 +56,22 @@ def setup_training(self):
 
     self.game_rewards = {
         e.COIN_COLLECTED: 1200.0,
-        e.KILLED_SELF: -3000.0,
-        e.GOT_KILLED: -3000.0,
+        e.KILLED_SELF: -3500.0,
+        e.GOT_KILLED: -3500.0,
         PLACEHOLDER_EVENT: 0.0,
         e.INVALID_ACTION: -1000.0,
         MOVE_CLOSER_TO_COIN: 90.0,
         MOVE_AWAY_FROM_COIN: -120.0,
-        MOVE_CLOSER_TO_CRATE: 80.0,
-        MOVE_AWAY_FROM_CRATE: -90.0,
-        e.WAITED: -100.0,
-        e.CRATE_DESTROYED: 80.0,
-        DROPPED_BOMB_AT_CRATE: 700.0,
-        DROPPED_BOMB_AT_OPPONENT: 700.0,
+        MOVE_CLOSER_TO_CRATE: 70.0,
+        MOVE_AWAY_FROM_CRATE: -80.0,
+        e.WAITED: -50.0,
+        e.CRATE_DESTROYED: 120.0,
+        DROPPED_BOMB_AT_CRATE: 400.0,
+        DROPPED_BOMB_AT_OPPONENT: 300.0,
         NOTHING_HAPPENED: -2.0,
-        INEFFECTIVE_BOMB: -100,
+        INEFFECTIVE_BOMB: -150,
         MOVE_CLOSER_TO_EXPLOSION: -3000.0,
-        MOVED: -2.0,
+        MOVED: -3.0,
         e.KILLED_OPPONENT: 2000.0
     }
 
@@ -179,6 +186,42 @@ def game_events_occurred(self, old_game_state: dict, self_action: str, new_game_
     # Gradually decrease epsilon
     self.epsilon = max(self.epsilon * self.epsilon_decay, self.min_epsilon)
 
+def save_game_score(last_game_state):
+    """
+    Save the score of the agent at the end of a game to a file
+    
+    :param last_game_state (dict): last game state occured
+    """
+    score = last_game_state['self'][1]
+    Scores.append(score)
+
+    with open(SCORE_FILE, 'wb') as file:
+        pickle.dump(Scores, file)
+
+def save_game_winner(last_game_state):
+    """
+    Save if the agent won the game to a file.
+    1 if the agent won/tied, 0 if not.
+    
+    :param last_game_state (dict): last game state occured
+    """
+    won = all([last_game_state['self'][1] > other[1]
+           for other in last_game_state['others']])
+    Wins.append(won)
+    with open(WINS_FILE, 'wb') as file:
+        pickle.dump(Scores, file)
+
+def save_others_game_score(last_game_state):
+    """
+    Save the score of the opponent agents at the end of a game to a file
+    
+    :param last_game_state (dict): last game state occured
+    """
+    scores = tuple([other[1] for other in last_game_state['others']])
+    Other_Scores.append(scores)
+
+    with open(OTHERS_SCORE_FILE, 'wb') as file:
+        pickle.dump(Other_Scores, file)
 
 def end_of_round(self, last_game_state: dict, last_action: str, events: List[str]):
     """
@@ -195,7 +238,14 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
     """
     self.logger.debug(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
     # print(f'Encountered event(s) {", ".join(map(repr, events))} in final step')
-    # TODO: Maybe end of game events?
+
+    # Keep track of the number of coins collected
+    save_game_score(last_game_state)
+    # Keep track of the winner
+    save_game_winner(last_game_state)
+    # Save others' game scores
+    save_others_game_score(last_game_state)
+
     # Update the Q Values
     last_features, _, = state_to_features(self, last_game_state)
     self.transitions.append(Transition(
