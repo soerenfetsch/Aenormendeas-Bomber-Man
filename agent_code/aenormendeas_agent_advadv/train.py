@@ -13,9 +13,9 @@ Scores = []
 Wins = []
 Other_Scores = []
 
-SCORE_FILE = "coin-heaven.pkl"
-WINS_FILE = "coin-heaven_wins.pkl"
-OTHERS_SCORE_FILE = "coin-heaven_scores.pkl"
+SCORE_FILE = "classic_versus_collectors.pkl"
+WINS_FILE = "classic_versus_collectors_wins.pkl"
+OTHERS_SCORE_FILE = "classic_versus_collectors_scores.pkl"
 
 # Hyper parameters -- DO modify
 TRANSITION_HISTORY_SIZE = 1000  # keep only ... last transitions

@@ -136,18 +136,13 @@ def adjacent_walkable_tiles(self, game_state, agent_position):
     # UP DOWN LEFT RIGHT
     directions = [(y-1, x), (y+1, x), (y, x-1), (y, x+1)]
     for dy, dx in directions:
-        # Outside bound
-        if not (0 <= dx < width and 0 <= dy < height):
-            tile_features.append(0)
-        # Stone wall
-        elif game_state['field'][dy, dx] == -1:
-            tile_features.append(0)
-        # Crate
-        elif game_state['field'][dy, dx] == 1:
-            tile_features.append(0)
-        # Free tile
-        elif game_state['field'][dy, dx] == 0:
+        # Free tile and no bomb or other player on tile
+        if (game_state['field'][dy, dx] == 0 and 
+            (dy, dx) not in [o[3] for o in game_state['others']] and
+            (dy, dx) not in [b[0] for b in game_state['bombs']]):
             tile_features.append(1)
+        else:
+            tile_features.append(0)
 
     assert len(tile_features) == 4
     return np.array(tile_features)
@@ -161,6 +156,8 @@ def find_closest_objectives(self, game_state, agent_position):
     well as the respective distance as a feature for each objective.
     WAIT: -1, UP: 0, DOWN: 1, LEFT: 2, RIGHT: 3. The distance is only
     saved up to the MAX_SAVE_DIST to lower the number of states.
+    New: path to objectives now only take a path along free tiles, if
+    there is a crate, the path is blocked.
 
     :param game_state (dict): The dictionary that describes everything on the board.
     :param agent_position (np.array): current coordinates of the agent
@@ -197,7 +194,7 @@ def find_closest_objectives(self, game_state, agent_position):
                                crates_picked < max_crates or
                                enemies_picked < max_enemies):
         curr_dist, (dy, dx) = heapq.heappop(q)
-        if curr_dist > distances[dx, dy]:
+        if curr_dist > distances[dy, dx]:
             continue
         # If coin is found
         if coins_picked < max_coins and (dy, dx) in game_state['coins']:
@@ -229,7 +226,6 @@ def find_closest_objectives(self, game_state, agent_position):
                 out_features_crates[crates_picked] = index
                 crate_distances[crates_picked] = curr_dist
                 crates_picked += 1
-        directions = [(dy-1, dx), (dy+1, dx), (dy, dx-1), (dy, dx+1)]
         # If enemy is found
         if enemies_picked < max_enemies and (dy, dx) in [e[3] for e in game_state['others']]:
             if (dy, dx) == (y, x):
@@ -244,6 +240,10 @@ def find_closest_objectives(self, game_state, agent_position):
                 out_features_enemies[enemies_picked] = index
                 enemy_distances[enemies_picked] = curr_dist
                 enemies_picked += 1
+        directions = [(dy-1, dx), (dy+1, dx), (dy, dx-1), (dy, dx+1)]
+        # If tile was crate do not go along this path further
+        if game_state['field'][dy, dx] == 1:
+            continue
         for ddy, ddx in directions:
             if not (0 <= ddx < width and 0 <= ddy < height):
                 continue
@@ -289,15 +289,15 @@ def is_crate_in_range(self, game_state, agent_position):
             return np.array([1])
     return np.array([0])
 
-def get_neighbors(pos, game_state, advanced_bomb_field, dist):
+def get_neighbors(pos, game_state, advanced_bomb_field, dist, can_pass_bomb=False):
     # removes 1 tick from explosion time since you need 1 tick to reach the neighbor
     y, x = pos
     # All 5 'neighbors' with UP DOWN LEFT RIGHT HERE
-    neighbors = [[(y-1, x), advanced_bomb_field[y-1, x] - 1, dist+1],
-                 [(y+1, x), advanced_bomb_field[y+1, x] - 1, dist+1],
-                 [(y, x-1), advanced_bomb_field[y, x-1] - 1, dist+1],
-                 [(y, x+1), advanced_bomb_field[y, x+1] - 1, dist+1],
-                 [(y, x), advanced_bomb_field[y, x] - 1, dist+1]]
+    neighbors = [[(y-1, x), advanced_bomb_field[y-1, x] - 1, dist+1, False],
+                 [(y+1, x), advanced_bomb_field[y+1, x] - 1, dist+1, False],
+                 [(y, x-1), advanced_bomb_field[y, x-1] - 1, dist+1, False],
+                 [(y, x+1), advanced_bomb_field[y, x+1] - 1, dist+1, False],
+                 [(y, x), advanced_bomb_field[y, x] - 1, dist+1, can_pass_bomb]]
     return neighbors
 
 def deadly_adjacent_fields(self, game_state, agent_position, adv_bomb_field):
@@ -309,11 +309,13 @@ def deadly_adjacent_fields(self, game_state, agent_position, adv_bomb_field):
     :param game_state:  A dictionary describing the current game board
     :param agent_position (np.array([x, y])): current coordinates of the agent
     :param adv_bomb_field (np.array): bomb field with bomb and time info of explosions
+    :param can_pass_bomb (bool): When dropping a bomb the agent can remain on the bomb
+           while stepping to the side means it cannot be passed anymore
     :return deadly (np.array): length 5, UP DOWN LEFT RIGHT HERE, 1 for deadly, 0 not
     """
     y, x = agent_position
     # UP DOWN LEFT RIGHT HERE
-    neighbors = get_neighbors((y, x), game_state, adv_bomb_field, 0)
+    neighbors = get_neighbors((y, x), game_state, adv_bomb_field, 0, True)
 
     deadly = np.array([1, 1, 1, 1, 1])
     if adv_bomb_field[y, x] == 0:
@@ -330,9 +332,9 @@ def deadly_adjacent_fields(self, game_state, agent_position, adv_bomb_field):
         while len(cur) != 0:
             # pop out cur with shortest distance
             shortest_dist = min(cur, key=lambda x: x[2])
-            pos, t, dist = shortest_dist
+            pos, t, dist, can_pass_bomb = shortest_dist
             dy, dx = pos
-            cur.remove([pos, t, dist])
+            cur.remove([pos, t, dist, can_pass_bomb])
             # update t_map if necessary
             if dist > current_dist:
                 assert current_dist == dist-1
@@ -344,14 +346,17 @@ def deadly_adjacent_fields(self, game_state, agent_position, adv_bomb_field):
                     dynamic_field[dy, dx] = 0
 
             if dynamic_field[dy, dx] == 0:
+                # bomb cannot be passed through if you have stepped away from it once
+                passable_bomb = can_pass_bomb or (dy, dx) not in [b[0] for b in game_state['bombs']]
                 # t < 0 means spot is safe
                 if t < 0:
                     deadly[i] = 0
                     break
-                elif t >= s.EXPLOSION_TIMER:
+                elif t >= s.EXPLOSION_TIMER and passable_bomb:
                     # t >= explosion timer means spot is not lethal YET and can be passed through
-                    cur.extend(get_neighbors(pos, game_state, t_map, dist))
-                # else spot currently exploding and cannot be traversed
+                    # if there is not a bomb on the spot
+                    cur.extend(get_neighbors(pos, game_state, t_map, dist, can_pass_bomb))
+                # else spot currently exploding and/or cannot be traversed
     return deadly
 
 def is_bombing_deadly(self, game_state, agent_position, adv_bomb_field):

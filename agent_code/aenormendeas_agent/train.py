@@ -10,8 +10,12 @@ from .callbacks import state_to_features, Q_TABLE_FILE, ACTIONS
 Transition = namedtuple('Transition',
                         ('state', 'action', 'next_state', 'reward'))
 Scores = []
+Wins = []
+Other_Scores = []
 
-SCORE_FILE = "crate_coin_collection_scores.pkl"
+SCORE_FILE = "classic_versus_rulebased_scores2.pkl"
+WINS_FILE = "classic_versus_rulebased_wins2.pkl"
+OTHERS_SCORE_FILE = "classic_rulebased_scores2.pkl"
 
 # Hyper parameters -- DO modify
 TRANSITION_HISTORY_SIZE = 1000  # keep only ... last transitions
@@ -99,7 +103,7 @@ def update_q_values(self):
 
         # Update the Q-table
         if tuple(state) not in self.q_table:
-            self.q_table[tuple(state)] = {}
+            self.q_table[tuple(state)] = {a: 0.0 for a in ACTIONS}
         self.q_table[tuple(state)][action] = new_q_value
         # print('UPDATING Q-VALUES OF ACTION', action)
         # print('OLD Q-VALUE =', q_value)
@@ -194,6 +198,31 @@ def save_game_score(last_game_state):
     with open(SCORE_FILE, 'wb') as file:
         pickle.dump(Scores, file)
 
+def save_game_winner(last_game_state):
+    """
+    Save if the agent won the game to a file.
+    1 if the agent won/tied, 0 if not.
+    
+    :param last_game_state (dict): last game state occured
+    """
+    won = all([last_game_state['self'][1] > other[1]
+           for other in last_game_state['others']])
+    Wins.append(won)
+    with open(WINS_FILE, 'wb') as file:
+        pickle.dump(Scores, file)
+
+def save_others_game_score(last_game_state):
+    """
+    Save the score of the opponent agents at the end of a game to a file
+    
+    :param last_game_state (dict): last game state occured
+    """
+    scores = tuple([other[1] for other in last_game_state['others']])
+    Other_Scores.append(scores)
+
+    with open(OTHERS_SCORE_FILE, 'wb') as file:
+        pickle.dump(Other_Scores, file)
+
 def end_of_round(self, last_game_state: dict, last_action: str, events: List[str]):
     """
     Called at the end of each game or when the agent died to hand out final rewards.
@@ -212,6 +241,10 @@ def end_of_round(self, last_game_state: dict, last_action: str, events: List[str
 
     # Keep track of the number of coins collected
     save_game_score(last_game_state)
+    # Keep track of the winner
+    save_game_winner(last_game_state)
+    # Save others' game scores
+    save_others_game_score(last_game_state)
 
     # Update the Q Values
     last_features, _, = state_to_features(self, last_game_state)
