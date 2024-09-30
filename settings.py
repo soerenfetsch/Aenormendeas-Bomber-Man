@@ -17,6 +17,10 @@ SCENARIOS = {
         "CRATE_DENSITY": 0,
         "COIN_COUNT": 50
     },
+    "small-coin-heaven": {
+        "CRATE_DENSITY": 0,
+        "COIN_COUNT": 10
+    },
     "loot-crate": { 
         "CRATE_DENSITY": 0.75, 
         "COIN_COUNT": 50 
